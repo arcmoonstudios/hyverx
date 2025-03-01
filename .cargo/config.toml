@@ -1,0 +1,14 @@
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-Clink-args=/DEFAULTLIB:libcmt"]
+
+[build]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[env]
+RUSTC_LOG = "warn"
+RUST_BACKTRACE = "1"
+RUST_LOG = "warn"
+
+# Add settings for rust-analyzer macro expansion
+[unstable.build-std]
+rustc-workspace-wrapper = true 

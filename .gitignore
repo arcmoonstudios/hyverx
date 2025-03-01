@@ -1,0 +1,109 @@
+# Rust specific ignores
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# Generated files
+*.o
+*.so
+*.dll
+*.dylib
+*.a
+*.lib
+*.exe
+*.out
+*.app
+
+# CUDA specific ignores
+*.i
+*.ii
+*.gpu
+*.ptx
+*.cubin
+*.fatbin
+
+# OpenCL specific ignores
+*.cl.bin
+*.cl.c
+*.cl.hpp
+
+# C/C++ specific ignores
+*.d
+*.slo
+*.lo
+*.obj
+*.gch
+*.pch
+
+# IDE files
+Docs/
+.idea/
+.vscode/
+*.swp
+*.swo
+.vs/
+*.sublime-workspace
+*.sublime-project
+.project
+.cproject
+*.iml
+
+# Dependency directories
+vendor/
+node_modules/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Binary test files
+/test_data/
+/benchmarks/data/
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+*.orig
+
+# Build directories
+/build/
+/dist/
+/cmake-build-*/
+
+# Custom C++ build files
+/src/hardware/cpu/*.o
+/src/hardware/gpu/*.o
+
+# Generated documentation
+/doc/
+/docs/_build/
+/docs/_static/
+/docs/_templates/
+
+# Test result files
+*.gcda
+*.gcno
+*.gcov
+/coverage/
+
+# Editor backup files
+*~
+
+# Intel oneAPI related
+*.spv
+*.bc

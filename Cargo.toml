@@ -1,0 +1,103 @@
+[package]
+name = "hyverx"
+version = "0.1.0"
+edition = "2021"
+authors = ["Lord Xyn <LordXyn@proton.me>"]
+description = "Advanced Multi-Dimensional Error Correction System with Hardware Acceleration"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/arcmoonstudios/hyverx"
+readme = "README.md"
+keywords = ["error-correction", "reed-solomon", "galois-field", "cuda", "avx"]
+categories = ["algorithms", "science", "hardware-support"]
+build = "build.rs"
+include = ["src/xypher_grid/tables/**/*"]
+
+[lib]
+name = "hyverx"
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+# Error handling
+thiserror = "2.0.11"
+anyhow = "1.0"
+
+# Numeric and math libraries
+num-traits = "0.2"
+num-derive = "0.4"
+nalgebra = "0.33.2"
+ndarray = { version = "0.16.1", features = ["rayon"] }
+bitvec = "1.0"
+
+# Parallel processing
+rayon = "1.8"
+crossbeam = "0.8"
+parking_lot = "0.12"
+
+# Hardware acceleration
+simd-json = "0.14.3"
+simdeez = "1.0" # AVX/SSE abstractions
+half = { version = "2.3", features = ["use-intrinsics"] }
+
+# CUDA support
+cudarc = { version = "0.13.9", features = ["cuda-12060"] }
+rustacuda = "0.1"
+rustacuda_core = "0.1"
+rustacuda_derive = "0.1"
+
+# OpenCL support
+opencl3 = "0.11"
+cl3 = "0.12"
+
+# Neural network components
+burn = { version = "0.16", features = ["train", "fusion"] }
+smartcore = "0.4"
+
+# Utilities
+lazy_static = "1.4"
+cached = "0.54"
+bytemuck = { version = "1.14", features = ["derive"] }
+rand = "0.9.0"
+rand_chacha = "0.9.0"
+intmap = "3.1.0"
+itertools = "0.14"
+memmap2 = "0.9.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bincode = "1.3"
+num_cpus = "1.16.0"
+clap = "4.5.10"
+
+# Logging and diagnostics
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# FFI utilities
+cxx = "1.0"
+cbindgen = "0.28"
+
+# Code generation
+quote = "1.0"
+syn = { version = "2.0", features = ["full", "extra-traits"] }
+proc-macro2 = "1.0"
+
+[features] # --features cpu,avx2,openmp,sycl,opencl,cuda
+default = ["cpu", "avx2",  "openmp", "sycl", "opencl", "cuda"]
+cpu = []
+avx2 = []
+openmp = []
+sycl = []
+opencl = []
+cuda = ["cudarc/cuda-12060"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+overflow-checks = false
+debug-assertions = false
+strip = true
+
+[build-dependencies]
+cbindgen = "0.28"
+cc = "1.0"
