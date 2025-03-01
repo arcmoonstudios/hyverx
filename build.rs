@@ -7,24 +7,23 @@ fn main() {
     // Get environment variables
     let out_dir = env::var("OUT_DIR").unwrap();
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_else(|_| "".to_string());
+
+    // Print target info for diagnostics
+    println!("cargo:warning=Building for target OS: {}", target_os);
+    println!("cargo:warning=Target environment: {}", target_env);
 
     // Detect CPU architecture features
     let has_avx2 = is_avx2_supported();
+    println!("cargo:warning=AVX2 support detected: {}", has_avx2);
 
     println!("cargo:rerun-if-changed=src/hardware/cpu/avx2_kernels.cpp");
     println!("cargo:rerun-if-changed=src/hardware/cpu/openmp_kernels.cpp");
     println!("cargo:rerun-if-changed=src/hardware/include/avx2_kernels.hpp");
     println!("cargo:rerun-if-changed=src/hardware/include/openmp_kernels.hpp");
 
-    // Check if CUDA, SYCL, and OpenCL are available - using exact paths for this system
-    let cuda_path =
-        Some(Path::new("C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.6").to_path_buf());
-    let sycl_path = Some(
-        Path::new("C:/Program Files (x86)/Intel/oneAPI/compiler/2025.0/include").to_path_buf(),
-    );
-    let opencl_path = Some(
-        Path::new("C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.6/lib/x64").to_path_buf(),
-    );
+    // Path detection based on platform
+    let (cuda_path, sycl_path, opencl_path) = detect_paths(&target_os);
 
     // Print includes path information for diagnostic purposes
     if let Some(ref path) = sycl_path {
@@ -59,17 +58,17 @@ fn main() {
     }
 
     // Compile AVX2 kernels
-    compile_avx2_kernels(has_avx2, &target_os);
+    compile_avx2_kernels(has_avx2, &target_os, &target_env);
 
     // Compile OpenMP kernels
-    compile_openmp_kernels(&target_os);
+    compile_openmp_kernels(&target_os, &target_env);
 
     // Link the compiled libraries
     println!("cargo:rustc-link-search=native={}", out_dir);
     println!("cargo:rustc-link-lib=static=avx2_kernels");
     println!("cargo:rustc-link-lib=static=openmp_kernels");
 
-    // Link system libraries
+    // Link system libraries based on platform
     if target_os == "linux" {
         println!("cargo:rustc-link-lib=dylib=stdc++");
         println!("cargo:rustc-link-lib=dylib=m");
@@ -77,10 +76,8 @@ fn main() {
             println!("cargo:rustc-link-lib=dylib=gomp");
         }
     } else if target_os == "windows" {
-        // For MSVC, we need to link against the Microsoft C++ runtime libraries
-        // Don't use stdc++ on Windows, as it's not available with MSVC
-        if cfg!(target_env = "msvc") {
-            // Link with MSVC C++ runtime instead
+        // For MSVC, use MSVC C++ runtime libraries
+        if target_env == "msvc" {
             println!("cargo:rustc-link-lib=dylib=msvcrt");
             println!("cargo:rustc-link-lib=dylib=msvcprt");
         } else {
@@ -89,10 +86,12 @@ fn main() {
         }
 
         if is_openmp_supported() {
-            // On Windows with Intel oneAPI, we need the Intel OpenMP library
-            println!(
-                "cargo:rustc-link-search=C:/Program Files (x86)/Intel/oneAPI/compiler/2025.0/lib"
-            );
+            // On Windows with Intel oneAPI, use Intel OpenMP library
+            if let Ok(oneapi_path) = env::var("ONEAPI_ROOT") {
+                println!("cargo:rustc-link-search={}/compiler/latest/lib", oneapi_path);
+            } else {
+                println!("cargo:rustc-link-search=C:/Program Files (x86)/Intel/oneAPI/compiler/2025.0/lib");
+            }
             println!("cargo:rustc-link-lib=dylib=libiomp5md");
         }
     } else if target_os == "macos" {
@@ -103,7 +102,47 @@ fn main() {
     }
 }
 
-fn compile_avx2_kernels(has_avx2: bool, target_os: &str) {
+fn detect_paths(target_os: &str) -> (Option<std::path::PathBuf>, Option<std::path::PathBuf>, Option<std::path::PathBuf>) {
+    let cuda_path;
+    let sycl_path;
+    let opencl_path;
+
+    if target_os == "windows" {
+        cuda_path = Some(Path::new("C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.6").to_path_buf());
+        sycl_path = Some(Path::new("C:/Program Files (x86)/Intel/oneAPI/compiler/2025.0/include").to_path_buf());
+        opencl_path = Some(Path::new("C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.6/lib/x64").to_path_buf());
+    } else if target_os == "linux" {
+        // Linux paths
+        cuda_path = if Path::new("/usr/local/cuda-12.6").exists() {
+            Some(Path::new("/usr/local/cuda-12.6").to_path_buf())
+        } else if Path::new("/usr/local/cuda").exists() {
+            Some(Path::new("/usr/local/cuda").to_path_buf())
+        } else {
+            None
+        };
+
+        sycl_path = if Path::new("/opt/intel/oneapi/compiler/latest/include").exists() {
+            Some(Path::new("/opt/intel/oneapi/compiler/latest/include").to_path_buf())
+        } else {
+            None
+        };
+
+        opencl_path = if Path::new("/usr/include/CL").exists() {
+            Some(Path::new("/usr/include/CL").to_path_buf())
+        } else {
+            None
+        };
+    } else {
+        // Default to None for other platforms
+        cuda_path = None;
+        sycl_path = None;
+        opencl_path = None;
+    }
+
+    (cuda_path, sycl_path, opencl_path)
+}
+
+fn compile_avx2_kernels(has_avx2: bool, target_os: &str, target_env: &str) {
     let mut config = cc::Build::new();
 
     // Configure compiler
@@ -119,30 +158,47 @@ fn compile_avx2_kernels(has_avx2: bool, target_os: &str) {
         println!("cargo:rustc-cfg=avx2");
     }
 
-    // Add platform-specific settings
+    // Add platform-specific settings based on OS and environment
     if target_os == "linux" || target_os == "macos" {
         config.flag("-std=c++17");
     } else if target_os == "windows" {
-        config.flag("/std:c++17");
+        if target_env == "msvc" {
+            config.flag("/std:c++17");
+        } else {
+            // For MinGW on Windows
+            config.flag("-std=c++17");
+        }
     }
 
     // Compile the library
     config.compile("avx2_kernels");
 }
 
-fn compile_openmp_kernels(target_os: &str) {
+fn compile_openmp_kernels(target_os: &str, target_env: &str) {
     let mut config = cc::Build::new();
 
-    // Intel OneAPI path for OpenMP
-    let intel_include_path = "C:/Program Files (x86)/Intel/oneAPI/compiler/2025.0/include";
+    // Intel OneAPI path - platform specific
+    let intel_include_path = if target_os == "windows" {
+        "C:/Program Files (x86)/Intel/oneAPI/compiler/2025.0/include"
+    } else if target_os == "linux" {
+        "/opt/intel/oneapi/compiler/latest/include"
+    } else if target_os == "macos" {
+        "/opt/intel/oneapi/compiler/latest/include"
+    } else {
+        ""
+    };
 
     // Configure compiler
     config
         .cpp(true)
         .file("src/hardware/cpu/openmp_kernels.cpp")
-        .include("src/hardware/include")
-        .include(intel_include_path)
-        .opt_level(3);
+        .include("src/hardware/include");
+
+    if !intel_include_path.is_empty() {
+        config.include(intel_include_path);
+    }
+
+    config.opt_level(3);
 
     // Include SYCL headers when available
     if let Ok(sycl_path) = env::var("SYCL_PATH") {
@@ -161,14 +217,24 @@ fn compile_openmp_kernels(target_os: &str) {
         if target_os == "linux" || target_os == "macos" {
             config.flag("-fopenmp");
         } else if target_os == "windows" {
-            config.flag("/openmp");
+            if target_env == "msvc" {
+                config.flag("/openmp");
+            } else {
+                // For MinGW on Windows
+                config.flag("-fopenmp");
+            }
         }
         println!("cargo:rustc-cfg=feature=\"openmp\"");
     }
 
     // Add platform-specific settings
     if target_os == "windows" {
-        config.flag("/std:c++17"); // Use C++17 instead of C++23 for better compatibility
+        if target_env == "msvc" {
+            config.flag("/std:c++17"); // Use C++17 instead of C++23 for better compatibility
+        } else {
+            // For MinGW on Windows
+            config.flag("-std=c++17");
+        }
     } else if target_os == "linux" || target_os == "macos" {
         config.flag("-std=c++17"); // Use C++17 instead of C++23 for better compatibility
     }
@@ -180,16 +246,18 @@ fn compile_openmp_kernels(target_os: &str) {
 fn is_avx2_supported() -> bool {
     // Check if AVX2 is supported on the build machine
     if cfg!(target_arch = "x86_64") || cfg!(target_arch = "x86") {
-        // Try to detect AVX2 support
-        let output = Command::new("grep")
-            .args(["-q", "avx2", "/proc/cpuinfo"])
-            .output();
+        // Linux detection
+        if cfg!(target_os = "linux") {
+            let output = Command::new("grep")
+                .args(["-q", "avx2", "/proc/cpuinfo"])
+                .output();
 
-        if let Ok(output) = output {
-            return output.status.success();
+            if let Ok(output) = output {
+                return output.status.success();
+            }
         }
 
-        // Fallback detection on non-Linux
+        // Windows detection
         #[cfg(target_os = "windows")]
         {
             if let Ok(output) = Command::new("wmic").args(["cpu", "get", "Name"]).output() {
@@ -198,8 +266,20 @@ fn is_avx2_supported() -> bool {
                     return true;
                 }
             }
+            
+            // Alternative detection for Windows
+            if let Ok(output) = Command::new("powershell")
+                .args(["-Command", "(Get-WmiObject Win32_Processor).Name"])
+                .output() 
+            {
+                let output_str = String::from_utf8_lossy(&output.stdout);
+                if output_str.to_lowercase().contains("avx2") {
+                    return true;
+                }
+            }
         }
 
+        // macOS detection
         #[cfg(target_os = "macos")]
         {
             if let Ok(output) = Command::new("sysctl")
@@ -214,6 +294,13 @@ fn is_avx2_supported() -> bool {
         }
     }
 
+    // Fallback: check RUSTFLAGS for target features
+    if let Ok(rustflags) = env::var("RUSTFLAGS") {
+        if rustflags.contains("target-feature=+avx2") {
+            return true;
+        }
+    }
+
     false
 }
 
@@ -223,8 +310,18 @@ fn is_openmp_supported() -> bool {
     let src_path = temp_dir.join("openmp_check.cpp");
     let out_path = temp_dir.join("openmp_check");
 
-    // Intel OneAPI path for OpenMP
-    let intel_include_path = "C:/Program Files (x86)/Intel/oneAPI/compiler/2025.0/include";
+    // Get target information
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_else(|_| "unknown".to_string());
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_else(|_| "".to_string());
+
+    // Intel OneAPI path - platform specific
+    let intel_include_path = if target_os == "windows" {
+        "C:/Program Files (x86)/Intel/oneAPI/compiler/2025.0/include"
+    } else if target_os == "linux" {
+        "/opt/intel/oneapi/compiler/latest/include"
+    } else {
+        ""
+    };
 
     // Create a simple OpenMP test program
     std::fs::write(
@@ -244,14 +341,24 @@ fn is_openmp_supported() -> bool {
     .unwrap_or(());
 
     // Try to compile with OpenMP
-    let status = if cfg!(target_os = "windows") {
+    let status = if target_os == "windows" && target_env == "msvc" {
         Command::new("cl")
             .args([
                 "/openmp",
-                format!("/I{}", intel_include_path).as_str(),
+                &format!("/I{}", intel_include_path),
                 src_path.to_str().unwrap(),
                 "/Fe:",
                 out_path.to_str().unwrap(),
+            ])
+            .status()
+    } else if target_os == "windows" {
+        // MinGW on Windows
+        Command::new("g++")
+            .args([
+                "-fopenmp",
+                "-o",
+                out_path.to_str().unwrap(),
+                src_path.to_str().unwrap(),
             ])
             .status()
     } else {
@@ -270,7 +377,17 @@ fn is_openmp_supported() -> bool {
     let _ = std::fs::remove_file(&out_path);
 
     // Return true if compilation succeeded
-    status.map(|s| s.success()).unwrap_or(false)
+    match status {
+        Ok(s) => {
+            let success = s.success();
+            println!("cargo:warning=OpenMP support detected: {}", success);
+            success
+        },
+        Err(e) => {
+            println!("cargo:warning=OpenMP compilation test failed: {}", e);
+            false
+        }
+    }
 }
 
 // The following functions are no longer used since we're hardcoding paths

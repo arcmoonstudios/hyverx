@@ -27,7 +27,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@nightly
         with:
-          components: clippy, rustfmt
+          components: clippy, rustfmt, rust-src
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Clippy Lints
@@ -57,12 +57,14 @@ jobs:
       
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
       
       - name: Install Linux dependencies
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake pkg-config libssl-dev 
+          sudo apt-get install -y build-essential cmake pkg-config libssl-dev libstdc++-12-dev
           
       # CUDA setup for Linux
       - name: Setup CUDA on Linux
@@ -103,6 +105,51 @@ jobs:
         with:
           limit-access-to-actor: true
       
+      # Create platform-specific config.toml
+      - name: Create Linux config.toml
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          mkdir -p .cargo
+          cat > .cargo/config.toml << 'EOF'
+          [target.x86_64-unknown-linux-gnu]
+          rustflags = []
+
+          [build]
+          rustflags = []
+
+          [env]
+          RUSTC_LOG = "warn"
+          RUST_BACKTRACE = "1"
+          RUST_LOG = "warn"
+
+          [unstable]
+          build-std = ["std", "core", "alloc"]
+          EOF
+      
+      # Keep Windows config.toml as-is
+      - name: Ensure config.toml exists on Windows
+        if: matrix.os == 'windows-latest'
+        run: |
+          if (-not (Test-Path .cargo)) { mkdir .cargo }
+          if (-not (Test-Path .cargo/config.toml)) {
+            @"
+          [target.x86_64-pc-windows-msvc]
+          rustflags = ["-Clink-args=/DEFAULTLIB:libcmt"]
+
+          [build]
+          rustflags = ["-C", "target-feature=+crt-static"]
+
+          [env]
+          RUSTC_LOG = "warn"
+          RUST_BACKTRACE = "1"
+          RUST_LOG = "warn"
+
+          [unstable]
+          build-std = ["std", "core", "alloc"]
+          "@ | Out-File -FilePath .cargo/config.toml -Encoding utf8
+          }
+        shell: pwsh
+      
       # Build with CPU features
       - name: Build with CPU features
         run: cargo build --features cpu,avx2,openmp
@@ -132,12 +179,35 @@ jobs:
       
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
       
       - name: Install Linux dependencies
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake pkg-config libssl-dev
+          sudo apt-get install -y build-essential cmake pkg-config libssl-dev libstdc++-12-dev
+      
+      # Create platform-specific config.toml
+      - name: Create Linux config.toml
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          mkdir -p .cargo
+          cat > .cargo/config.toml << 'EOF'
+          [target.x86_64-unknown-linux-gnu]
+          rustflags = []
+
+          [build]
+          rustflags = []
+
+          [env]
+          RUSTC_LOG = "warn"
+          RUST_BACKTRACE = "1"
+          RUST_LOG = "warn"
+
+          [unstable]
+          build-std = ["std", "core", "alloc"]
+          EOF
       
       # Cache dependencies to speed up builds
       - name: Cache dependencies
@@ -164,8 +234,34 @@ jobs:
       
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
       
-      - name: Build release
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config libssl-dev libstdc++-12-dev
+      
+      - name: Create Linux config.toml
+        run: |
+          mkdir -p .cargo
+          cat > .cargo/config.toml << 'EOF'
+          [target.x86_64-unknown-linux-gnu]
+          rustflags = []
+
+          [build]
+          rustflags = []
+
+          [env]
+          RUSTC_LOG = "warn"
+          RUST_BACKTRACE = "1"
+          RUST_LOG = "warn"
+
+          [unstable]
+          build-std = ["std", "core", "alloc"]
+          EOF
+      
+      - name: Build release for Linux
         run: cargo build --release --features cpu,avx2,openmp
       
       - name: Create Release
@@ -179,7 +275,7 @@ jobs:
           draft: false
           prerelease: false
       
-      - name: Upload Release Asset
+      - name: Upload Linux Release Asset
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
