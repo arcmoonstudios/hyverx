@@ -17,18 +17,18 @@ use std::sync::{Arc, RwLock};
 use crate::error::{Error, Result};
 use crate::galois::GaloisField;
 use crate::hardware::AcceleratorType;
+use crate::hardware::ElementWiseOp;
 use crate::hardware::HardwareAccelerator;
 use crate::hardware::HardwareCapabilities;
 use crate::hardware::HardwareStatistics;
 use crate::hardware::TensorOperation;
-use crate::hardware::ElementWiseOp;
 
 /// FFI bindings for AVX2 kernels - provides low-level access to AVX2 SIMD instructions
 /// for hardware acceleration on CPUs supporting Advanced Vector Extensions 2.
 #[allow(non_camel_case_types)]
 pub mod avx2_ffi {
     use std::os::raw::{c_float, c_int, c_ushort};
-    
+
     /// Element-wise operations supported by AVX2 kernels
     #[repr(C)]
     #[derive(Debug, Copy, Clone)]
@@ -44,13 +44,13 @@ pub mod avx2_ffi {
         /// Multiplication operation: f(x) = x * c
         MULTIPLY,
     }
-    
+
     extern "C" {
         /// Checks if AVX2 instruction set is supported on the current CPU
         pub fn is_avx2_supported() -> bool;
-        
+
         /// Performs matrix multiplication using AVX2 instructions
-        /// 
+        ///
         /// Calculates C = A * B where A is (m x k) and B is (k x n)
         pub fn matrix_multiply(
             a: *const c_float,
@@ -60,9 +60,9 @@ pub mod avx2_ffi {
             n: c_int,
             k: c_int,
         );
-        
+
         /// Performs element-wise operations using AVX2 instructions
-        /// 
+        ///
         /// Applies the specified operation to each element of the input array
         pub fn element_wise_operation(
             input: *const c_float,
@@ -71,9 +71,9 @@ pub mod avx2_ffi {
             op: ElementWiseOperation,
             constant: c_float,
         );
-        
+
         /// Performs 2D convolution using AVX2 instructions
-        /// 
+        ///
         /// Applies a convolution kernel to an input tensor
         pub fn convolution(
             input: *const c_float,
@@ -93,9 +93,9 @@ pub mod avx2_ffi {
             padding_h: c_int,
             padding_w: c_int,
         );
-        
+
         /// Performs Galois field multiplication using AVX2 instructions
-        /// 
+        ///
         /// Multiplies two arrays of field elements element-wise
         pub fn gf_multiply(
             a: *const c_ushort,
@@ -106,19 +106,14 @@ pub mod avx2_ffi {
             log_table: *const c_ushort,
             field_size: c_int,
         );
-        
+
         /// Performs Galois field addition using AVX2 instructions
-        /// 
+        ///
         /// Adds two arrays of field elements element-wise (XOR operation)
-        pub fn gf_add(
-            a: *const c_ushort,
-            b: *const c_ushort,
-            result: *mut c_ushort,
-            size: c_int,
-        );
-        
+        pub fn gf_add(a: *const c_ushort, b: *const c_ushort, result: *mut c_ushort, size: c_int);
+
         /// Calculates syndromes for error detection using AVX2 instructions
-        /// 
+        ///
         /// Computes syndrome values for the given data array
         pub fn calculate_syndromes(
             data: *const c_ushort,
@@ -129,9 +124,9 @@ pub mod avx2_ffi {
             log_table: *const c_ushort,
             field_size: c_int,
         );
-        
+
         /// Evaluates polynomials at multiple points in batch using AVX2 instructions
-        /// 
+        ///
         /// Efficiently evaluates multiple polynomials at multiple points in parallel
         pub fn polynomial_eval_batch(
             polys: *const c_ushort,
@@ -153,7 +148,7 @@ pub mod avx2_ffi {
 #[allow(non_camel_case_types)]
 pub mod openmp_ffi {
     use std::os::raw::{c_float, c_int, c_ushort};
-    
+
     /// Element-wise operations supported by OpenMP kernels
     #[repr(C)]
     #[derive(Debug, Copy, Clone)]
@@ -169,10 +164,10 @@ pub mod openmp_ffi {
         /// Multiplication operation: f(x) = x * c
         MULTIPLY,
     }
-    
+
     extern "C" {
         /// Performs matrix multiplication using OpenMP parallelization
-        /// 
+        ///
         /// Calculates C = A * B where A is (m x k) and B is (k x n)
         pub fn openmp_matrix_multiply(
             a: *const c_float,
@@ -183,9 +178,9 @@ pub mod openmp_ffi {
             k: c_int,
             num_threads: c_int,
         );
-        
+
         /// Performs element-wise operations using OpenMP parallelization
-        /// 
+        ///
         /// Applies the specified operation to each element of the input array
         pub fn openmp_element_wise_operation(
             input: *const c_float,
@@ -195,9 +190,9 @@ pub mod openmp_ffi {
             constant: c_float,
             num_threads: c_int,
         );
-        
+
         /// Performs 2D convolution using OpenMP parallelization
-        /// 
+        ///
         /// Applies a convolution kernel to an input tensor
         pub fn openmp_convolution(
             input: *const c_float,
@@ -218,9 +213,9 @@ pub mod openmp_ffi {
             padding_w: c_int,
             num_threads: c_int,
         );
-        
+
         /// Performs Galois field multiplication using OpenMP parallelization
-        /// 
+        ///
         /// Multiplies two arrays of field elements element-wise
         pub fn openmp_gf_multiply(
             a: *const c_ushort,
@@ -232,9 +227,9 @@ pub mod openmp_ffi {
             field_size: c_int,
             num_threads: c_int,
         );
-        
+
         /// Performs Galois field addition using OpenMP parallelization
-        /// 
+        ///
         /// Adds two arrays of field elements element-wise (XOR operation)
         pub fn openmp_gf_add(
             a: *const c_ushort,
@@ -243,9 +238,9 @@ pub mod openmp_ffi {
             size: c_int,
             num_threads: c_int,
         );
-        
+
         /// Calculates syndromes for error detection using OpenMP parallelization
-        /// 
+        ///
         /// Computes syndrome values for the given data array
         pub fn openmp_calculate_syndromes(
             data: *const c_ushort,
@@ -257,9 +252,9 @@ pub mod openmp_ffi {
             field_size: c_int,
             num_threads: c_int,
         );
-        
+
         /// Evaluates polynomials at multiple points in batch using OpenMP parallelization
-        /// 
+        ///
         /// Efficiently evaluates multiple polynomials at multiple points in parallel
         pub fn openmp_polynomial_eval_batch(
             polys: *const c_ushort,
@@ -274,16 +269,16 @@ pub mod openmp_ffi {
             field_size: c_int,
             num_threads: c_int,
         );
-        
+
         /// Returns the optimal number of threads for OpenMP operations
-        /// 
+        ///
         /// Uses system information to determine the best thread count for performance
         pub fn get_optimal_thread_count() -> c_int;
     }
 }
 
 /// CPU accelerator using AVX2 SIMD instructions.
-/// 
+///
 /// This implementation leverages Advanced Vector Extensions 2 (AVX2) for SIMD parallelism,
 /// enabling efficient execution of matrix and vector operations on CPU architectures
 /// that support these extensions.
@@ -314,21 +309,21 @@ impl CPUAccelerator {
     pub fn new(galois_field: Arc<GaloisField>) -> Result<Self> {
         // Check AVX2 support
         let avx2_available = unsafe { avx2_ffi::is_avx2_supported() };
-        
+
         Ok(Self {
             galois_field,
             avx2_available,
             stats: RwLock::new(HardwareStatistics::default()),
         })
     }
-    
+
     /// Checks if AVX2 accelerator is available on the current system.
     pub fn is_available() -> bool {
         unsafe { avx2_ffi::is_avx2_supported() }
     }
-    
+
     /// Matrix multiplication using AVX2 instructions.
-    /// 
+    ///
     /// Performs optimized matrix multiplication C = A * B using AVX2 SIMD instructions.
     ///
     /// # Arguments
@@ -349,10 +344,10 @@ impl CPUAccelerator {
         dims: (usize, usize, usize),
     ) -> Result<()> {
         let (m, k, n) = dims;
-        
+
         // Create output buffer
         let mut c_data = vec![0.0f32; m * n];
-        
+
         // Call AVX2 matrix multiplication
         unsafe {
             avx2_ffi::matrix_multiply(
@@ -364,23 +359,23 @@ impl CPUAccelerator {
                 k as i32,
             );
         }
-        
+
         // Update output
         let mut c_guard = c.lock();
         *c_guard = c_data;
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.cpu_operations += 1;
             stats.avx2_operations += 1;
         }
-        
+
         Ok(())
     }
-    
+
     /// Element-wise operation using AVX2 instructions.
-    /// 
+    ///
     /// Applies an element-wise operation to a tensor using AVX2 SIMD instructions.
     ///
     /// # Arguments
@@ -406,17 +401,17 @@ impl CPUAccelerator {
             ElementWiseOp::Add(_val) => avx2_ffi::ElementWiseOperation::ADD,
             ElementWiseOp::Multiply(_val) => avx2_ffi::ElementWiseOperation::MULTIPLY,
         };
-        
+
         // Get constant value for Add/Multiply operations
         let constant = match op {
             ElementWiseOp::Add(val) => val,
             ElementWiseOp::Multiply(val) => val,
             _ => 0.0,
         };
-        
+
         // Create output buffer
         let mut output_data = vec![0.0f32; input.len()];
-        
+
         // Call AVX2 element-wise operation
         unsafe {
             avx2_ffi::element_wise_operation(
@@ -427,23 +422,23 @@ impl CPUAccelerator {
                 constant,
             );
         }
-        
+
         // Update output
         let mut output_guard = output.lock();
         *output_guard = output_data;
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.cpu_operations += 1;
             stats.avx2_operations += 1;
         }
-        
+
         Ok(())
     }
-    
+
     /// Convolution using AVX2 instructions.
-    /// 
+    ///
     /// Performs optimized 2D convolution using AVX2 SIMD instructions.
     ///
     /// # Arguments
@@ -474,7 +469,7 @@ impl CPUAccelerator {
         let (kernel_height, kernel_width, kernel_in_channels, kernel_out_channels) = kernel_dims;
         let (stride_h, stride_w) = stride;
         let (padding_h, padding_w) = padding;
-        
+
         // Check dimensions
         if input_channels != kernel_in_channels {
             return Err(Error::InvalidInput(format!(
@@ -482,15 +477,15 @@ impl CPUAccelerator {
                 input_channels, kernel_in_channels
             )));
         }
-        
+
         // Calculate output dimensions
         let output_height = (input_height + 2 * padding_h - kernel_height) / stride_h + 1;
         let output_width = (input_width + 2 * padding_w - kernel_width) / stride_w + 1;
         let output_size = batch_size * output_height * output_width * kernel_out_channels;
-        
+
         // Create output buffer
         let mut output_data = vec![0.0f32; output_size];
-        
+
         // Call AVX2 convolution
         unsafe {
             avx2_ffi::convolution(
@@ -512,18 +507,18 @@ impl CPUAccelerator {
                 padding_w as i32,
             );
         }
-        
+
         // Update output
         let mut output_guard = output.lock();
         *output_guard = output_data;
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.cpu_operations += 1;
             stats.avx2_operations += 1;
         }
-        
+
         Ok(())
     }
 }
@@ -532,11 +527,11 @@ impl HardwareAccelerator for CPUAccelerator {
     fn accelerator_type(&self) -> AcceleratorType {
         AcceleratorType::Cpu
     }
-    
+
     fn is_available(&self) -> bool {
         self.avx2_available
     }
-    
+
     fn capabilities(&self) -> HardwareCapabilities {
         HardwareCapabilities {
             avx2_available: self.avx2_available,
@@ -555,29 +550,29 @@ impl HardwareAccelerator for CPUAccelerator {
             fountain_available: false,
         }
     }
-    
+
     fn generate_lookup_tables(&self, path: &Path) -> Result<()> {
         // Create the AVX2-specific tables directory
         let avx2_path = path.join("avx2");
         std::fs::create_dir_all(&avx2_path)?;
-        
+
         // Generate Galois field lookup tables
         self.galois_field().generate_lookup_tables()?;
-        
+
         Ok(())
     }
-    
+
     fn calculate_syndromes(&self, data: &[u8], syndrome_count: usize) -> Result<Vec<u16>> {
         // Convert data to u16
         let data_u16: Vec<u16> = data.iter().map(|&x| x as u16).collect();
-        
+
         // Get Galois field tables
         let exp_table = self.galois_field.get_exp_table()?;
         let log_table = self.galois_field.get_log_table()?;
-        
+
         // Create output buffer
         let mut syndromes = vec![0u16; syndrome_count];
-        
+
         // Call AVX2 syndrome calculation
         unsafe {
             avx2_ffi::calculate_syndromes(
@@ -590,29 +585,31 @@ impl HardwareAccelerator for CPUAccelerator {
                 self.galois_field.element_count() as i32,
             );
         }
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.cpu_operations += 1;
             stats.avx2_operations += 1;
         }
-        
+
         Ok(syndromes)
     }
-    
+
     fn multiply_vec(&self, a: &[u16], b: &[u16]) -> Result<Vec<u16>> {
         if a.len() != b.len() {
-            return Err(Error::InvalidInput("Input arrays must have the same length".into()));
+            return Err(Error::InvalidInput(
+                "Input arrays must have the same length".into(),
+            ));
         }
-        
+
         // Get Galois field tables
         let exp_table = self.galois_field.get_exp_table()?;
         let log_table = self.galois_field.get_log_table()?;
-        
+
         // Create output buffer
         let mut result = vec![0u16; a.len()];
-        
+
         // Call AVX2 Galois field multiplication
         unsafe {
             avx2_ffi::gf_multiply(
@@ -625,73 +622,70 @@ impl HardwareAccelerator for CPUAccelerator {
                 self.galois_field.element_count() as i32,
             );
         }
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.cpu_operations += 1;
             stats.avx2_operations += 1;
         }
-        
+
         Ok(result)
     }
-    
+
     fn add_vec(&self, a: &[u16], b: &[u16]) -> Result<Vec<u16>> {
         if a.len() != b.len() {
-            return Err(Error::InvalidInput("Input arrays must have the same length".into()));
+            return Err(Error::InvalidInput(
+                "Input arrays must have the same length".into(),
+            ));
         }
-        
+
         // Create output buffer
         let mut result = vec![0u16; a.len()];
-        
+
         // Call AVX2 Galois field addition
         unsafe {
-            avx2_ffi::gf_add(
-                a.as_ptr(),
-                b.as_ptr(),
-                result.as_mut_ptr(),
-                a.len() as i32,
-            );
+            avx2_ffi::gf_add(a.as_ptr(), b.as_ptr(), result.as_mut_ptr(), a.len() as i32);
         }
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.cpu_operations += 1;
             stats.avx2_operations += 1;
         }
-        
+
         Ok(result)
     }
-    
+
     fn polynomial_eval_batch(&self, polys: &[Vec<u16>], points: &[u16]) -> Result<Vec<Vec<u16>>> {
         let n_polys = polys.len();
         let n_points = points.len();
-        
+
         if n_polys == 0 || n_points == 0 {
             return Ok(vec![vec![0; n_points]; n_polys]);
         }
-        
+
         // Find the maximum polynomial length
         let max_poly_len = polys.iter().map(|p| p.len()).max().unwrap();
-        
+
         // Flatten polys for C API
         let mut polys_flat = Vec::with_capacity(n_polys * max_poly_len);
         let mut poly_lengths = Vec::with_capacity(n_polys);
-        
+
         for poly in polys {
             poly_lengths.push(poly.len() as i32);
             polys_flat.extend(poly);
             polys_flat.extend(vec![0u16; max_poly_len - poly.len()]);
         }
-        
+
         // Get Galois field tables
         let exp_table = self.galois_field.get_exp_table()?;
         let log_table = self.galois_field.get_log_table()?;
-        
+
         // Create output buffer
         let mut results_flat = vec![0u16; n_polys * n_points];
-        
+
         // Call AVX2 polynomial evaluation
         unsafe {
             avx2_ffi::polynomial_eval_batch(
@@ -707,7 +701,7 @@ impl HardwareAccelerator for CPUAccelerator {
                 self.galois_field.element_count() as i32,
             );
         }
-        
+
         // Reshape results
         let mut results = vec![vec![0u16; n_points]; n_polys];
         for i in 0..n_polys {
@@ -715,17 +709,17 @@ impl HardwareAccelerator for CPUAccelerator {
                 results[i][j] = results_flat[i * n_points + j];
             }
         }
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.cpu_operations += 1;
             stats.avx2_operations += 1;
         }
-        
+
         Ok(results)
     }
-    
+
     fn perform_tensor_operation(&self, op: TensorOperation) -> Result<()> {
         match op {
             TensorOperation::MatrixMultiply { a, b, c, dims } => {
@@ -734,34 +728,47 @@ impl HardwareAccelerator for CPUAccelerator {
             TensorOperation::ElementWise { input, output, op } => {
                 self.element_wise_avx2(&input, output, op)?;
             }
-            TensorOperation::Convolution { input, kernel, output, input_dims, kernel_dims, stride, padding } => {
+            TensorOperation::Convolution {
+                input,
+                kernel,
+                output,
+                input_dims,
+                kernel_dims,
+                stride,
+                padding,
+            } => {
                 self.convolution_avx2(
-                    &input, &kernel, output,
-                    input_dims, kernel_dims, stride, padding
+                    &input,
+                    &kernel,
+                    output,
+                    input_dims,
+                    kernel_dims,
+                    stride,
+                    padding,
                 )?;
             }
         }
-        
+
         Ok(())
     }
-    
+
     fn galois_field(&self) -> Arc<GaloisField> {
         self.galois_field.clone()
     }
-    
+
     fn get_statistics(&self) -> HardwareStatistics {
         self.stats.read().unwrap().clone()
     }
 }
 
 /// Helper function to determine available system memory.
-/// 
+///
 /// Uses platform-specific methods to determine the amount of available memory
 /// in the system. Falls back to a conservative estimate based on CPU count
 /// if platform-specific methods are not available.
-/// 
+///
 /// # Returns
-/// 
+///
 /// Available memory in bytes
 fn available_memory() -> usize {
     // Try to get memory info using platform-specific methods
@@ -782,7 +789,7 @@ fn available_memory() -> usize {
             Err(_) => {}
         }
     }
-    
+
     #[cfg(target_os = "windows")]
     {
         // On Windows, we would use GlobalMemoryStatusEx, but for simplicity and cross-platform
@@ -790,7 +797,7 @@ fn available_memory() -> usize {
         let cpus = num_cpus::get();
         return cpus * 1024 * 1024 * 1024; // Estimate 1GB per logical CPU
     }
-    
+
     #[cfg(target_os = "macos")]
     {
         // On macOS, we would use sysctl, but for simplicity and cross-platform
@@ -798,11 +805,10 @@ fn available_memory() -> usize {
         let cpus = num_cpus::get();
         return cpus * 1024 * 1024 * 1024; // Estimate 1GB per logical CPU
     }
-    
 }
 
 /// CPU accelerator using OpenMP for parallel execution.
-/// 
+///
 /// This implementation leverages OpenMP for multi-threaded parallelism,
 /// enabling efficient execution of matrix and vector operations across
 /// multiple CPU cores.
@@ -838,7 +844,7 @@ impl OpenMPAccelerator {
             num_threads,
         })
     }
-    
+
     /// Checks if OpenMP accelerator is available on the current system.
     pub fn is_available() -> bool {
         // OpenMP is generally available on all platforms
@@ -847,15 +853,15 @@ impl OpenMPAccelerator {
         {
             true
         }
-        
+
         #[cfg(not(feature = "openmp"))]
         {
             false
         }
     }
-    
+
     /// Matrix multiplication using OpenMP parallelization.
-    /// 
+    ///
     /// Performs optimized matrix multiplication C = A * B using multi-threading.
     ///
     /// # Arguments
@@ -876,10 +882,10 @@ impl OpenMPAccelerator {
         dims: (usize, usize, usize),
     ) -> Result<()> {
         let (m, k, n) = dims;
-        
+
         // Create output buffer
         let mut c_data = vec![0.0f32; m * n];
-        
+
         // Call OpenMP matrix multiplication
         unsafe {
             openmp_ffi::openmp_matrix_multiply(
@@ -892,22 +898,22 @@ impl OpenMPAccelerator {
                 self.num_threads,
             );
         }
-        
+
         // Update output
         let mut c_guard = c.lock();
         *c_guard = c_data;
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.cpu_operations += 1;
         }
-        
+
         Ok(())
     }
-    
+
     /// Element-wise operation using OpenMP parallelization.
-    /// 
+    ///
     /// Applies an element-wise operation to a tensor using multi-threading.
     ///
     /// # Arguments
@@ -933,17 +939,17 @@ impl OpenMPAccelerator {
             ElementWiseOp::Add(_val) => openmp_ffi::ElementWiseOperation::ADD,
             ElementWiseOp::Multiply(_val) => openmp_ffi::ElementWiseOperation::MULTIPLY,
         };
-        
+
         // Get constant value for Add/Multiply operations
         let constant = match op {
             ElementWiseOp::Add(val) => val,
             ElementWiseOp::Multiply(val) => val,
             _ => 0.0,
         };
-        
+
         // Create output buffer
         let mut output_data = vec![0.0f32; input.len()];
-        
+
         // Call OpenMP element-wise operation
         unsafe {
             openmp_ffi::openmp_element_wise_operation(
@@ -955,22 +961,22 @@ impl OpenMPAccelerator {
                 self.num_threads,
             );
         }
-        
+
         // Update output
         let mut output_guard = output.lock();
         *output_guard = output_data;
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.cpu_operations += 1;
         }
-        
+
         Ok(())
     }
-    
+
     /// Convolution using OpenMP parallelization.
-    /// 
+    ///
     /// Performs optimized 2D convolution using multi-threading.
     ///
     /// # Arguments
@@ -1001,7 +1007,7 @@ impl OpenMPAccelerator {
         let (kernel_height, kernel_width, kernel_in_channels, kernel_out_channels) = kernel_dims;
         let (stride_h, stride_w) = stride;
         let (padding_h, padding_w) = padding;
-        
+
         // Check dimensions
         if input_channels != kernel_in_channels {
             return Err(Error::InvalidInput(format!(
@@ -1009,15 +1015,15 @@ impl OpenMPAccelerator {
                 input_channels, kernel_in_channels
             )));
         }
-        
+
         // Calculate output dimensions
         let output_height = (input_height + 2 * padding_h - kernel_height) / stride_h + 1;
         let output_width = (input_width + 2 * padding_w - kernel_width) / stride_w + 1;
         let output_size = batch_size * output_height * output_width * kernel_out_channels;
-        
+
         // Create output buffer
         let mut output_data = vec![0.0f32; output_size];
-        
+
         // Call OpenMP convolution
         unsafe {
             openmp_ffi::openmp_convolution(
@@ -1040,17 +1046,17 @@ impl OpenMPAccelerator {
                 self.num_threads,
             );
         }
-        
+
         // Update output
         let mut output_guard = output.lock();
         *output_guard = output_data;
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.cpu_operations += 1;
         }
-        
+
         Ok(())
     }
 }
@@ -1059,7 +1065,7 @@ impl HardwareAccelerator for OpenMPAccelerator {
     fn accelerator_type(&self) -> AcceleratorType {
         AcceleratorType::Cpu
     }
-    
+
     fn is_available(&self) -> bool {
         // OpenMP is generally available on all platforms
         // but we'll verify based on the available implementation
@@ -1067,13 +1073,13 @@ impl HardwareAccelerator for OpenMPAccelerator {
         {
             true
         }
-        
+
         #[cfg(not(feature = "openmp"))]
         {
             false
         }
     }
-    
+
     fn capabilities(&self) -> HardwareCapabilities {
         HardwareCapabilities {
             avx2_available: false,
@@ -1092,29 +1098,29 @@ impl HardwareAccelerator for OpenMPAccelerator {
             fountain_available: false,
         }
     }
-    
+
     fn generate_lookup_tables(&self, path: &Path) -> Result<()> {
         // Create the OpenMP-specific tables directory
         let openmp_path = path.join("openmp");
         std::fs::create_dir_all(&openmp_path)?;
-        
+
         // Generate Galois field lookup tables
         self.galois_field().generate_lookup_tables()?;
-        
+
         Ok(())
     }
-    
+
     fn calculate_syndromes(&self, data: &[u8], syndrome_count: usize) -> Result<Vec<u16>> {
         // Convert data to u16
         let data_u16: Vec<u16> = data.iter().map(|&x| x as u16).collect();
-        
+
         // Get Galois field tables
         let exp_table = self.galois_field.get_exp_table()?;
         let log_table = self.galois_field.get_log_table()?;
-        
+
         // Create output buffer
         let mut syndromes = vec![0u16; syndrome_count];
-        
+
         // Call OpenMP syndrome calculation
         unsafe {
             openmp_ffi::openmp_calculate_syndromes(
@@ -1128,28 +1134,30 @@ impl HardwareAccelerator for OpenMPAccelerator {
                 self.num_threads,
             );
         }
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.cpu_operations += 1;
         }
-        
+
         Ok(syndromes)
     }
-    
+
     fn multiply_vec(&self, a: &[u16], b: &[u16]) -> Result<Vec<u16>> {
         if a.len() != b.len() {
-            return Err(Error::InvalidInput("Input arrays must have the same length".into()));
+            return Err(Error::InvalidInput(
+                "Input arrays must have the same length".into(),
+            ));
         }
-        
+
         // Get Galois field tables
         let exp_table = self.galois_field.get_exp_table()?;
         let log_table = self.galois_field.get_log_table()?;
-        
+
         // Create output buffer
         let mut result = vec![0u16; a.len()];
-        
+
         // Call OpenMP Galois field multiplication
         unsafe {
             openmp_ffi::openmp_gf_multiply(
@@ -1163,24 +1171,26 @@ impl HardwareAccelerator for OpenMPAccelerator {
                 self.num_threads,
             );
         }
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.cpu_operations += 1;
         }
-        
+
         Ok(result)
     }
-    
+
     fn add_vec(&self, a: &[u16], b: &[u16]) -> Result<Vec<u16>> {
         if a.len() != b.len() {
-            return Err(Error::InvalidInput("Input arrays must have the same length".into()));
+            return Err(Error::InvalidInput(
+                "Input arrays must have the same length".into(),
+            ));
         }
-        
+
         // Create output buffer
         let mut result = vec![0u16; a.len()];
-        
+
         // Call OpenMP Galois field addition
         unsafe {
             openmp_ffi::openmp_gf_add(
@@ -1191,44 +1201,44 @@ impl HardwareAccelerator for OpenMPAccelerator {
                 self.num_threads,
             );
         }
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.cpu_operations += 1;
         }
-        
+
         Ok(result)
     }
-    
+
     fn polynomial_eval_batch(&self, polys: &[Vec<u16>], points: &[u16]) -> Result<Vec<Vec<u16>>> {
         let n_polys = polys.len();
         let n_points = points.len();
-        
+
         if n_polys == 0 || n_points == 0 {
             return Ok(vec![vec![0; n_points]; n_polys]);
         }
-        
+
         // Find the maximum polynomial length
         let max_poly_len = polys.iter().map(|p| p.len()).max().unwrap();
-        
+
         // Flatten polys for C API
         let mut polys_flat = Vec::with_capacity(n_polys * max_poly_len);
         let mut poly_lengths = Vec::with_capacity(n_polys);
-        
+
         for poly in polys {
             poly_lengths.push(poly.len() as i32);
             polys_flat.extend(poly);
             polys_flat.extend(vec![0u16; max_poly_len - poly.len()]);
         }
-        
+
         // Get Galois field tables
         let exp_table = self.galois_field.get_exp_table()?;
         let log_table = self.galois_field.get_log_table()?;
-        
+
         // Create output buffer
         let mut results_flat = vec![0u16; n_polys * n_points];
-        
+
         // Call OpenMP polynomial evaluation
         unsafe {
             openmp_ffi::openmp_polynomial_eval_batch(
@@ -1245,7 +1255,7 @@ impl HardwareAccelerator for OpenMPAccelerator {
                 self.num_threads,
             );
         }
-        
+
         // Reshape results
         let mut results = vec![vec![0u16; n_points]; n_polys];
         for i in 0..n_polys {
@@ -1253,16 +1263,16 @@ impl HardwareAccelerator for OpenMPAccelerator {
                 results[i][j] = results_flat[i * n_points + j];
             }
         }
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.cpu_operations += 1;
         }
-        
+
         Ok(results)
     }
-    
+
     fn perform_tensor_operation(&self, op: TensorOperation) -> Result<()> {
         match op {
             TensorOperation::MatrixMultiply { a, b, c, dims } => {
@@ -1271,29 +1281,42 @@ impl HardwareAccelerator for OpenMPAccelerator {
             TensorOperation::ElementWise { input, output, op } => {
                 self.element_wise_openmp(&input, output, op)?;
             }
-            TensorOperation::Convolution { input, kernel, output, input_dims, kernel_dims, stride, padding } => {
+            TensorOperation::Convolution {
+                input,
+                kernel,
+                output,
+                input_dims,
+                kernel_dims,
+                stride,
+                padding,
+            } => {
                 self.convolution_openmp(
-                    &input, &kernel, output,
-                    input_dims, kernel_dims, stride, padding
+                    &input,
+                    &kernel,
+                    output,
+                    input_dims,
+                    kernel_dims,
+                    stride,
+                    padding,
                 )?;
             }
         }
-        
+
         Ok(())
     }
-    
+
     fn galois_field(&self) -> Arc<GaloisField> {
         self.galois_field.clone()
     }
-    
+
     fn get_statistics(&self) -> HardwareStatistics {
         self.stats.read().unwrap().clone()
     }
 }
 
 /// Register CPU hardware accelerators.
-/// 
-/// This function initializes and registers all available CPU-based hardware 
+///
+/// This function initializes and registers all available CPU-based hardware
 /// accelerators (AVX2 and OpenMP) to the provided accelerator list.
 ///
 /// # Arguments
@@ -1303,27 +1326,29 @@ impl HardwareAccelerator for OpenMPAccelerator {
 /// # Returns
 ///
 /// Result indicating success or an error
-pub fn register_cpu_accelerators(accelerators: &mut Vec<Arc<dyn HardwareAccelerator>>) -> Result<()> {
+pub fn register_cpu_accelerators(
+    accelerators: &mut Vec<Arc<dyn HardwareAccelerator>>,
+) -> Result<()> {
     // Check if CPU acceleration is available
     if CPUAccelerator::is_available() {
         // Create Galois field
         let galois_field = Arc::new(GaloisField::new(0x11D));
-        
+
         // Create CPU accelerator
         let cpu_accelerator = Arc::new(CPUAccelerator::new(galois_field.clone())?);
-        
+
         // Register CPU accelerator
         accelerators.push(cpu_accelerator.clone());
-        
+
         // Check if OpenMP is available
         if OpenMPAccelerator::is_available() {
             // Create OpenMP accelerator (auto thread count)
             let openmp_accelerator = Arc::new(OpenMPAccelerator::new(galois_field, 0)?);
-            
+
             // Register OpenMP accelerator
             accelerators.push(openmp_accelerator);
         }
     }
-    
+
     Ok(())
 }

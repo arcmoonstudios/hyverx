@@ -8,10 +8,10 @@ use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
 
+use super::{AlgorithmType, ErrorCorrectionAlgorithm};
 use crate::error::{Error, Result};
 use crate::galois::GaloisField;
 use crate::hardware::HardwareAccelerator;
-use super::{AlgorithmType, ErrorCorrectionAlgorithm};
 
 /// Reed-Muller error correction algorithm implementation.
 pub struct ReedMullerCode {
@@ -110,7 +110,7 @@ impl ReedMullerCode {
         if k == 0 || k == n {
             return 1;
         }
-        
+
         let k = k.min(n - k);
         let mut c = 1;
         for i in 0..k {
@@ -132,27 +132,27 @@ impl ReedMullerCode {
     fn generate_generator_matrix(order: usize, num_variables: usize) -> Result<Vec<Vec<u16>>> {
         let codeword_length = 1 << num_variables;
         let message_length = Self::calculate_message_length(order, num_variables);
-        
+
         let mut generator_matrix = vec![vec![0; codeword_length]; message_length];
-        
+
         // First row is all ones (constant term)
         for j in 0..codeword_length {
             generator_matrix[0][j] = 1;
         }
-        
+
         // Generate rows for each monomial
         let mut row_index = 1;
-        
+
         // For each order from 1 to r
         for r in 1..=order {
             // Generate all monomials of degree r
             let monomials = Self::generate_monomials(num_variables, r);
-            
+
             for monomial in monomials {
                 // For each possible input (represented as a binary number)
                 for j in 0..codeword_length {
                     let mut product = 1;
-                    
+
                     // Evaluate the monomial at this input
                     for &var in &monomial {
                         // Check if the var-th bit of j is set
@@ -163,14 +163,14 @@ impl ReedMullerCode {
                             break;
                         }
                     }
-                    
+
                     generator_matrix[row_index][j] = product;
                 }
-                
+
                 row_index += 1;
             }
         }
-        
+
         Ok(generator_matrix)
     }
 
@@ -188,19 +188,23 @@ impl ReedMullerCode {
         if degree == 0 {
             return vec![vec![]];
         }
-        
+
         if degree == 1 {
             return (0..num_variables).map(|i| vec![i]).collect();
         }
-        
+
         let mut result = Vec::new();
-        
+
         // Generate all monomials of degree degree-1
         let lower_monomials = Self::generate_monomials(num_variables, degree - 1);
-        
+
         for monomial in lower_monomials {
-            let last_var = if monomial.is_empty() { 0 } else { monomial[monomial.len() - 1] };
-            
+            let last_var = if monomial.is_empty() {
+                0
+            } else {
+                monomial[monomial.len() - 1]
+            };
+
             // Multiply by each variable with index >= last_var
             for var in last_var..num_variables {
                 let mut new_monomial = monomial.clone();
@@ -208,7 +212,7 @@ impl ReedMullerCode {
                 result.push(new_monomial);
             }
         }
-        
+
         result
     }
 
@@ -224,22 +228,31 @@ impl ReedMullerCode {
     fn encode_with_generator_matrix(&self, message: &[u16]) -> Result<Vec<u16>> {
         if message.len() != self.message_length {
             return Err(Error::InvalidInput(
-                format!("Invalid message length: {} (expected: {})", message.len(), self.message_length).into(),
+                format!(
+                    "Invalid message length: {} (expected: {})",
+                    message.len(),
+                    self.message_length
+                )
+                .into(),
             ));
         }
-        
+
         let mut codeword = vec![0; self.codeword_length];
-        
+
         for i in 0..self.message_length {
             if message[i] == 0 {
                 continue;
             }
-            
+
             for j in 0..self.codeword_length {
-                codeword[j] = self.galois_field.add(codeword[j], self.galois_field.multiply(message[i], self.generator_matrix[i][j]));
+                codeword[j] = self.galois_field.add(
+                    codeword[j],
+                    self.galois_field
+                        .multiply(message[i], self.generator_matrix[i][j]),
+                );
             }
         }
-        
+
         Ok(codeword)
     }
 
@@ -255,27 +268,32 @@ impl ReedMullerCode {
     fn decode_with_majority_logic(&self, received: &[u16]) -> Result<Vec<u16>> {
         if received.len() != self.codeword_length {
             return Err(Error::InvalidInput(
-                format!("Invalid codeword length: {} (expected: {})", received.len(), self.codeword_length).into(),
+                format!(
+                    "Invalid codeword length: {} (expected: {})",
+                    received.len(),
+                    self.codeword_length
+                )
+                .into(),
             ));
         }
-        
+
         // For simplicity, we'll use a basic approach for first-order Reed-Muller codes
         // In a real implementation, this would use more sophisticated algorithms for higher orders
-        
+
         let mut decoded = vec![0; self.message_length];
-        
+
         // Decode the constant term (first bit of the message)
         let mut sum = 0;
         for &bit in received {
             sum += bit as usize;
         }
         decoded[0] = if sum > self.codeword_length / 2 { 1 } else { 0 };
-        
+
         // For first-order terms, use the Hadamard transform
         if self.order >= 1 {
             for i in 0..self.num_variables {
                 let mut sum = 0;
-                
+
                 for j in 0..self.codeword_length {
                     if (j & (1 << i)) != 0 {
                         sum += if received[j] == 1 { 1 } else { -1 };
@@ -283,13 +301,13 @@ impl ReedMullerCode {
                         sum += if received[j] == 1 { -1 } else { 1 };
                     }
                 }
-                
+
                 decoded[i + 1] = if sum > 0 { 1 } else { 0 };
             }
         }
-        
+
         // Higher-order terms would require more complex decoding
-        
+
         Ok(decoded)
     }
 }
@@ -298,92 +316,108 @@ impl ErrorCorrectionAlgorithm for ReedMullerCode {
     fn algorithm_type(&self) -> AlgorithmType {
         AlgorithmType::ReedMullerCode
     }
-    
+
     fn encode(&self, data: &[u8]) -> Result<Vec<u8>> {
         // Convert data to field elements
         let mut message: Vec<u16> = data.iter().map(|&b| b as u16).collect();
-        
+
         // Pad message if needed
         if message.len() < self.message_length {
             message.resize(self.message_length, 0);
         } else if message.len() > self.message_length {
             return Err(Error::InvalidInput(
-                format!("Input data too large: {} bytes (max: {})", data.len(), self.message_length).into(),
+                format!(
+                    "Input data too large: {} bytes (max: {})",
+                    data.len(),
+                    self.message_length
+                )
+                .into(),
             ));
         }
-        
+
         // Use hardware acceleration if available
-        if self.hardware_accelerator.is_available() && self.hardware_accelerator.supports_reed_muller() {
-            return self.hardware_accelerator
+        if self.hardware_accelerator.is_available()
+            && self.hardware_accelerator.supports_reed_muller()
+        {
+            return self
+                .hardware_accelerator
                 .reed_muller_encode(data, self.order, self.num_variables)
                 .map_err(|e| Error::HardwareAcceleration(e.to_string()));
         }
-        
+
         // Software implementation
         let codeword = self.encode_with_generator_matrix(&message)?;
-        
+
         // Convert back to bytes
         let encoded: Vec<u8> = codeword.iter().map(|&x| x as u8).collect();
         Ok(encoded)
     }
-    
+
     fn decode(&self, data: &[u8]) -> Result<Vec<u8>> {
         if data.len() != self.codeword_length {
             return Err(Error::InvalidInput(
-                format!("Invalid codeword length: {} (expected: {})", data.len(), self.codeword_length).into(),
+                format!(
+                    "Invalid codeword length: {} (expected: {})",
+                    data.len(),
+                    self.codeword_length
+                )
+                .into(),
             ));
         }
-        
+
         // Use hardware acceleration if available
-        if self.hardware_accelerator.is_available() && self.hardware_accelerator.supports_reed_muller() {
-            return self.hardware_accelerator
+        if self.hardware_accelerator.is_available()
+            && self.hardware_accelerator.supports_reed_muller()
+        {
+            return self
+                .hardware_accelerator
                 .reed_muller_decode(data, self.order, self.num_variables)
                 .map_err(|e| Error::HardwareAcceleration(e.to_string()));
         }
-        
+
         // Convert data to field elements
         let received: Vec<u16> = data.iter().map(|&b| b as u16).collect();
-        
+
         // Decode using majority-logic decoding
         let decoded = self.decode_with_majority_logic(&received)?;
-        
+
         // Convert back to bytes
         let decoded_bytes: Vec<u8> = decoded.iter().map(|&x| x as u8).collect();
         Ok(decoded_bytes)
     }
-    
+
     fn max_correctable_errors(&self) -> usize {
         // Reed-Muller codes of order r in m variables can correct up to (2^(m-r-1) - 1) errors
         (1 << (self.num_variables - self.order - 1)) - 1
     }
-    
+
     fn overhead_ratio(&self) -> f64 {
         self.codeword_length as f64 / self.message_length as f64
     }
-    
+
     fn generate_lookup_tables(&self, path: &Path) -> Result<()> {
         // Create the Reed-Muller directory
         let rm_path = path.join("reed_muller");
         std::fs::create_dir_all(&rm_path)?;
-        
+
         // Save generator matrix
         let gen_matrix_path = rm_path.join("generator_matrix.bin");
         let gen_matrix_data = bincode::serialize(&self.generator_matrix)
             .map_err(|e| Error::BinarySerialization(e))?;
-        
+
         std::fs::write(gen_matrix_path, gen_matrix_data)?;
-        
+
         Ok(())
     }
-    
+
     fn supports_hardware_acceleration(&self) -> bool {
         self.hardware_accelerator.is_available() && self.hardware_accelerator.supports_reed_muller()
     }
-    
+
     fn set_hardware_accelerator(&mut self, accelerator: Arc<dyn HardwareAccelerator>) {
         self.hardware_accelerator = accelerator;
     }
-    
+
     fn name(&self) -> &str {
         "Reed-Muller Code"
     }
@@ -414,4 +448,4 @@ impl Clone for ReedMullerCode {
             hardware_accelerator: self.hardware_accelerator.clone(),
         }
     }
-} 
+}

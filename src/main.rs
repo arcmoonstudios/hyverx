@@ -144,12 +144,15 @@ fn main() -> Result<()> {
     info!("  Dimensions: {}", dimensions);
     info!("  Hardware Target: {:?}", hardware_target);
     let thread_str = threads.to_string();
-    info!("  Threads: {}", if threads == 0 { "auto" } else { &thread_str });
+    info!(
+        "  Threads: {}",
+        if threads == 0 { "auto" } else { &thread_str }
+    );
 
     // Initialize the HyVERX system
     info!("Initializing HyVERX system...");
     let mut hyverx = HyVerxSystem::new(config)?;
-    
+
     // Generate lookup tables if requested
     if generate_tables {
         info!("Generating precomputed lookup tables...");
@@ -161,14 +164,17 @@ fn main() -> Result<()> {
     // Read input data
     info!("Reading input data from {}...", input_path);
     let input_data = std::fs::read(input_path).context("Failed to read input file")?;
-    
+
     // Process the data
-    info!("Processing data with {} dimensions and {} ECC bytes...", dimensions, ecc_size);
+    info!(
+        "Processing data with {} dimensions and {} ECC bytes...",
+        dimensions, ecc_size
+    );
     let start = Instant::now();
     let result = hyverx.process_data(&input_data)?;
     let elapsed = start.elapsed();
     info!("Processing completed in {:?}", elapsed);
-    
+
     // Calculate performance metrics
     let throughput = (input_data.len() as f64) / elapsed.as_secs_f64() / (1024.0 * 1024.0);
     info!(
@@ -176,15 +182,15 @@ fn main() -> Result<()> {
         throughput,
         throughput * 8.0
     );
-    
+
     // Get error correction statistics
     let stats = hyverx.get_statistics();
     info!("Error correction statistics: {:#?}", stats);
-    
+
     // Write output data
     info!("Writing output to {}...", output_path);
     std::fs::write(output_path, result).context("Failed to write output file")?;
-    
+
     info!("HyVERX processing completed successfully");
     Ok(())
 }

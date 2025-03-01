@@ -3,12 +3,12 @@
 //! This module provides utilities for allocating error correction algorithms
 //! to different error patterns and regions for optimal parallel processing.
 
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use crate::error::{Error, Result};
-use crate::algorithms::AlgorithmType;
 use super::{Region, WorkItem, WorkScheduler};
+use crate::algorithms::AlgorithmType;
+use crate::error::{Error, Result};
 
 /// An algorithm allocator for distributing error correction algorithms.
 #[derive(Debug)]
@@ -87,7 +87,7 @@ impl AlgorithmAllocator {
             allocation_map: HashMap::new(),
         }
     }
-    
+
     /// Sets the available algorithms.
     ///
     /// # Arguments
@@ -101,7 +101,7 @@ impl AlgorithmAllocator {
         self.algorithms = algorithms;
         self
     }
-    
+
     /// Sets the allocation strategy.
     ///
     /// # Arguments
@@ -115,7 +115,7 @@ impl AlgorithmAllocator {
         self.strategy = strategy;
         self
     }
-    
+
     /// Allocates algorithms to error patterns.
     ///
     /// # Arguments
@@ -129,25 +129,25 @@ impl AlgorithmAllocator {
         if self.algorithms.is_empty() {
             return Err(Error::InvalidInput("No algorithms available".into()));
         }
-        
+
         let mut work_items = Vec::with_capacity(error_patterns.len());
-        
+
         for (i, pattern) in error_patterns.iter().enumerate() {
             let algorithm = self.select_algorithm(pattern)?;
-            
+
             work_items.push(WorkItem {
                 region: pattern.region.clone(),
                 algorithm,
                 priority: i,
             });
-            
+
             // Store the allocation for future reference
             self.allocation_map.insert(i, algorithm);
         }
-        
+
         Ok(work_items)
     }
-    
+
     /// Selects an algorithm for an error pattern.
     ///
     /// # Arguments
@@ -176,11 +176,11 @@ impl AlgorithmAllocator {
                             // For high error density, use Reed-Solomon
                             Ok(AlgorithmType::ReedSolomon)
                         }
-                    },
+                    }
                     ErrorDistribution::Burst => {
                         // For burst errors, use Reed-Solomon
                         Ok(AlgorithmType::ReedSolomon)
-                    },
+                    }
                     ErrorDistribution::Clustered => {
                         // For clustered errors, use Turbo codes
                         if self.algorithms.contains(&AlgorithmType::Turbo) {
@@ -189,7 +189,7 @@ impl AlgorithmAllocator {
                             // Fall back to Reed-Solomon
                             Ok(AlgorithmType::ReedSolomon)
                         }
-                    },
+                    }
                     ErrorDistribution::Periodic => {
                         // For periodic errors, use Polar codes
                         if self.algorithms.contains(&AlgorithmType::PolarCode) {
@@ -198,13 +198,13 @@ impl AlgorithmAllocator {
                             // Fall back to Reed-Solomon
                             Ok(AlgorithmType::ReedSolomon)
                         }
-                    },
+                    }
                 }
-            },
+            }
             AllocationStrategy::RegionSize => {
                 // Select algorithm based on region size
                 let region_size = pattern.region.size();
-                
+
                 if region_size < 1000 {
                     // For small regions, use Reed-Solomon
                     Ok(AlgorithmType::ReedSolomon)
@@ -225,7 +225,7 @@ impl AlgorithmAllocator {
                         Ok(AlgorithmType::ReedSolomon)
                     }
                 }
-            },
+            }
             AllocationStrategy::ErrorDensity => {
                 // Select algorithm based on error density
                 if pattern.error_density < 0.01 {
@@ -261,21 +261,21 @@ impl AlgorithmAllocator {
                     // For high error density, use Reed-Solomon
                     Ok(AlgorithmType::ReedSolomon)
                 }
-            },
+            }
             AllocationStrategy::Fixed => {
                 // Always use the first available algorithm
                 Ok(self.algorithms[0])
-            },
+            }
             AllocationStrategy::Random => {
                 // Use a random algorithm
                 use rand::Rng;
                 let mut rng = rand::rng();
                 let index = rng.random_range(0..self.algorithms.len());
                 Ok(self.algorithms[index])
-            },
+            }
         }
     }
-    
+
     /// Schedules the allocated work items.
     ///
     /// # Arguments
@@ -289,7 +289,7 @@ impl AlgorithmAllocator {
         self.scheduler.schedule_batch(work_items)?;
         Ok(())
     }
-    
+
     /// Allocates algorithms to error patterns and schedules the work items.
     ///
     /// # Arguments
@@ -304,7 +304,7 @@ impl AlgorithmAllocator {
         self.schedule(work_items)?;
         Ok(())
     }
-    
+
     /// Waits for all scheduled work items to complete.
     ///
     /// # Returns
@@ -314,12 +314,12 @@ impl AlgorithmAllocator {
         self.scheduler.wait()?;
         Ok(())
     }
-    
+
     /// Returns the allocation map.
     pub fn allocation_map(&self) -> &HashMap<usize, AlgorithmType> {
         &self.allocation_map
     }
-    
+
     /// Selects an encoding algorithm based on data characteristics.
     ///
     /// # Arguments
@@ -332,10 +332,10 @@ impl AlgorithmAllocator {
     ///
     /// The selected algorithm type.
     pub fn select_encoding_algorithm(
-        &self, 
-        _data_size: usize, 
-        error_rate: f64, 
-        burst_errors: bool
+        &self,
+        _data_size: usize,
+        error_rate: f64,
+        burst_errors: bool,
     ) -> Result<AlgorithmType> {
         // Simple algorithm selection logic based on data characteristics
         if burst_errors {
@@ -343,7 +343,7 @@ impl AlgorithmAllocator {
                 return Ok(AlgorithmType::ReedSolomon);
             }
         }
-        
+
         if error_rate < 0.01 {
             // For very low error rates, use LDPC or Polar codes
             if self.algorithms.contains(&AlgorithmType::Ldpc) {
@@ -360,20 +360,25 @@ impl AlgorithmAllocator {
             // For high error rates, use more robust algorithms
             if self.algorithms.contains(&AlgorithmType::TensorReedSolomon) {
                 return Ok(AlgorithmType::TensorReedSolomon);
-            } else if self.algorithms.contains(&AlgorithmType::AdaptiveReedSolomon) {
+            } else if self
+                .algorithms
+                .contains(&AlgorithmType::AdaptiveReedSolomon)
+            {
                 return Ok(AlgorithmType::AdaptiveReedSolomon);
             }
         }
-        
+
         // Default to Reed-Solomon if available
         if self.algorithms.contains(&AlgorithmType::ReedSolomon) {
             return Ok(AlgorithmType::ReedSolomon);
         }
-        
+
         // If no algorithms are available, return an error
-        Err(Error::InvalidInput("No suitable encoding algorithm available".into()))
+        Err(Error::InvalidInput(
+            "No suitable encoding algorithm available".into(),
+        ))
     }
-    
+
     /// Selects a decoding algorithm based on data characteristics.
     ///
     /// # Arguments
@@ -386,20 +391,20 @@ impl AlgorithmAllocator {
     ///
     /// The selected algorithm type.
     pub fn select_decoding_algorithm(
-        &self, 
-        _data_size: usize, 
-        error_rate: f64, 
-        burst_errors: bool
+        &self,
+        _data_size: usize,
+        error_rate: f64,
+        burst_errors: bool,
     ) -> Result<AlgorithmType> {
         // For decoding, we should use the same algorithm that was used for encoding
         // But we can optimize based on the expected error patterns
-        
+
         if burst_errors {
             if self.algorithms.contains(&AlgorithmType::ReedSolomon) {
                 return Ok(AlgorithmType::ReedSolomon);
             }
         }
-        
+
         if error_rate < 0.01 {
             // For very low error rates, use LDPC or Polar codes
             if self.algorithms.contains(&AlgorithmType::Ldpc) {
@@ -416,20 +421,25 @@ impl AlgorithmAllocator {
             // For high error rates, use more robust algorithms
             if self.algorithms.contains(&AlgorithmType::TensorReedSolomon) {
                 return Ok(AlgorithmType::TensorReedSolomon);
-            } else if self.algorithms.contains(&AlgorithmType::AdaptiveReedSolomon) {
+            } else if self
+                .algorithms
+                .contains(&AlgorithmType::AdaptiveReedSolomon)
+            {
                 return Ok(AlgorithmType::AdaptiveReedSolomon);
             }
         }
-        
+
         // Default to Reed-Solomon if available
         if self.algorithms.contains(&AlgorithmType::ReedSolomon) {
             return Ok(AlgorithmType::ReedSolomon);
         }
-        
+
         // If no algorithms are available, return an error
-        Err(Error::InvalidInput("No suitable decoding algorithm available".into()))
+        Err(Error::InvalidInput(
+            "No suitable decoding algorithm available".into(),
+        ))
     }
-    
+
     /// Creates a new error pattern.
     ///
     /// # Arguments
@@ -455,7 +465,7 @@ impl AlgorithmAllocator {
             burst_length,
         }
     }
-    
+
     /// Creates error patterns for a set of regions.
     ///
     /// # Arguments
@@ -472,15 +482,14 @@ impl AlgorithmAllocator {
         error_density: f64,
         distribution: ErrorDistribution,
     ) -> Vec<ErrorPattern> {
-        regions.iter()
-            .map(|region| {
-                ErrorPattern {
-                    region: region.clone(),
-                    error_density,
-                    distribution,
-                    burst_length: None,
-                }
+        regions
+            .iter()
+            .map(|region| ErrorPattern {
+                region: region.clone(),
+                error_density,
+                distribution,
+                burst_length: None,
             })
             .collect()
     }
-} 
+}

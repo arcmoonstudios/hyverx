@@ -117,7 +117,7 @@ pub enum Error {
     /// Error during serialization/deserialization
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
-    
+
     /// Error during binary serialization/deserialization
     #[error("Binary serialization error: {0}")]
     BinarySerialization(#[from] bincode::Error),
@@ -143,7 +143,7 @@ pub enum Error {
     /// Generic error with a message
     #[error("{0}")]
     Generic(String),
-    
+
     /// Errors from other sources
     #[error("Other error: {0}")]
     Other(#[from] anyhow::Error),

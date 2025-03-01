@@ -9,17 +9,17 @@
 //! - Tensor Reed-Solomon: Optimized for multi-dimensional data using tensor operations
 //! - Adaptive Reed-Solomon: Dynamically selects the optimal processing strategy
 
+use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use super::{AlgorithmType, ErrorCorrectionAlgorithm};
 use crate::error::{Error, Result};
 use crate::galois::GaloisField;
 use crate::hardware::HardwareAccelerator;
-use crate::parallel::{ThreadPool, ParallelConfig};
-use super::{AlgorithmType, ErrorCorrectionAlgorithm};
+use crate::parallel::{ParallelConfig, ThreadPool};
 
 /// Reed-Solomon error correction algorithm implementation.
 pub struct ReedSolomon {
@@ -120,27 +120,30 @@ impl ReedSolomon {
         // Use hardware acceleration if available
         if self.hardware_accelerator.is_available() {
             let received_bytes: Vec<u8> = received.iter().map(|&x| x as u8).collect();
-            return self.hardware_accelerator
+            return self
+                .hardware_accelerator
                 .calculate_syndromes(&received_bytes, self.parity_length)
                 .map_err(|e| Error::HardwareAcceleration(e.to_string()));
         }
 
         // Software implementation
         let mut syndromes = vec![0; self.parity_length];
-        
+
         for i in 0..self.parity_length {
             let mut syndrome = 0;
             let x = self.galois_field.exp((i as i32) + 1);
-            
+
             for j in 0..received.len() {
                 let power = (received.len() - 1 - j) as u32;
-                let term = self.galois_field.multiply(received[j], self.galois_field.power(x, power));
+                let term = self
+                    .galois_field
+                    .multiply(received[j], self.galois_field.power(x, power));
                 syndrome = self.galois_field.add(syndrome, term);
             }
-            
+
             syndromes[i] = syndrome;
         }
-        
+
         Ok(syndromes)
     }
 
@@ -148,31 +151,31 @@ impl ReedSolomon {
     fn find_error_locator(&self, syndromes: &[u16]) -> Result<Vec<u16>> {
         let mut error_locator = vec![1];
         let mut old_locator = vec![1];
-        
+
         for i in 0..syndromes.len() {
             let delta = self.calculate_discrepancy(&error_locator, syndromes, i);
-            
+
             if delta != 0 {
                 let mut new_locator = error_locator.clone();
-                
+
                 // Compute error_locator + delta * x^i * old_locator
                 let mut term = vec![0; i + 1 + old_locator.len()];
                 for j in 0..old_locator.len() {
                     term[j + i + 1] = self.galois_field.multiply(delta, old_locator[j]);
                 }
-                
+
                 // Resize new_locator if needed
                 if term.len() > new_locator.len() {
                     new_locator.resize(term.len(), 0);
                 }
-                
+
                 // Add term to new_locator
                 for j in 0..term.len() {
                     if j < new_locator.len() {
                         new_locator[j] = self.galois_field.add(new_locator[j], term[j]);
                     }
                 }
-                
+
                 if 2 * i > syndromes.len() {
                     error_locator = new_locator;
                 } else {
@@ -181,51 +184,53 @@ impl ReedSolomon {
                 }
             }
         }
-        
+
         Ok(error_locator)
     }
 
     /// Calculates the discrepancy for the Berlekamp-Massey algorithm.
     fn calculate_discrepancy(&self, error_locator: &[u16], syndromes: &[u16], i: usize) -> u16 {
         let mut sum = 0;
-        
+
         for j in 0..error_locator.len() {
             if j == 0 {
                 continue; // Skip the first coefficient (always 1)
             }
-            
+
             if i >= j && syndromes[i - j] != 0 && error_locator[j] != 0 {
                 sum = self.galois_field.add(
                     sum,
-                    self.galois_field.multiply(error_locator[j], syndromes[i - j]),
+                    self.galois_field
+                        .multiply(error_locator[j], syndromes[i - j]),
                 );
             }
         }
-        
+
         sum
     }
 
     /// Finds the roots of the error locator polynomial using the Chien search algorithm.
     fn find_error_locations(&self, error_locator: &[u16]) -> Result<Vec<usize>> {
         let mut error_locations = Vec::new();
-        
+
         for i in 0..self.codeword_length {
-            let x_inv = self.galois_field.exp(self.galois_field.element_count() as i32 - i as i32 - 1);
+            let x_inv = self
+                .galois_field
+                .exp(self.galois_field.element_count() as i32 - i as i32 - 1);
             let mut sum = 0;
-            
+
             for j in 0..error_locator.len() {
-                let term = self.galois_field.multiply(
-                    error_locator[j],
-                    self.galois_field.power(x_inv, j as u32),
-                );
+                let term = self
+                    .galois_field
+                    .multiply(error_locator[j], self.galois_field.power(x_inv, j as u32));
                 sum = self.galois_field.add(sum, term);
             }
-            
+
             if sum == 0 {
                 error_locations.push(i);
             }
         }
-        
+
         // Check if the number of errors is correctable
         if error_locations.len() > self.parity_length / 2 {
             return Err(Error::TooManyErrors {
@@ -233,31 +238,38 @@ impl ReedSolomon {
                 correctable: self.parity_length / 2,
             });
         }
-        
+
         Ok(error_locations)
     }
 
     /// Calculates the error values using the Forney algorithm.
-    fn calculate_error_values(&self, error_locator: &[u16], syndromes: &[u16], error_locations: &[usize]) -> Result<Vec<u16>> {
+    fn calculate_error_values(
+        &self,
+        error_locator: &[u16],
+        syndromes: &[u16],
+        error_locations: &[usize],
+    ) -> Result<Vec<u16>> {
         let mut error_values = vec![0; error_locations.len()];
-        
+
         for i in 0..error_locations.len() {
-            let x_inv = self.galois_field.exp(self.galois_field.element_count() as i32 - error_locations[i] as i32 - 1);
-            
+            let x_inv = self
+                .galois_field
+                .exp(self.galois_field.element_count() as i32 - error_locations[i] as i32 - 1);
+
             // Calculate error evaluator polynomial
             let mut error_eval = 0;
             for j in 0..syndromes.len() {
-                let term = self.galois_field.multiply(
-                    syndromes[j],
-                    self.galois_field.power(x_inv, (j as u32) + 1),
-                );
+                let term = self
+                    .galois_field
+                    .multiply(syndromes[j], self.galois_field.power(x_inv, (j as u32) + 1));
                 error_eval = self.galois_field.add(error_eval, term);
             }
-            
+
             // Calculate error locator derivative
             let mut locator_derivative = 0;
             for j in 1..error_locator.len() {
-                if j % 2 == 1 { // Only odd powers contribute to the derivative
+                if j % 2 == 1 {
+                    // Only odd powers contribute to the derivative
                     let term = self.galois_field.multiply(
                         error_locator[j],
                         self.galois_field.power(x_inv, (j - 1) as u32),
@@ -265,86 +277,97 @@ impl ReedSolomon {
                     locator_derivative = self.galois_field.add(locator_derivative, term);
                 }
             }
-            
+
             // Calculate error value
             if locator_derivative != 0 {
                 error_values[i] = self.galois_field.divide(error_eval, locator_derivative);
             }
         }
-        
+
         Ok(error_values)
     }
 
     /// Corrects errors in the received codeword.
-    fn correct_errors(&self, received: &mut [u16], error_locations: &[usize], error_values: &[u16]) -> Result<()> {
+    fn correct_errors(
+        &self,
+        received: &mut [u16],
+        error_locations: &[usize],
+        error_values: &[u16],
+    ) -> Result<()> {
         for i in 0..error_locations.len() {
             let location = error_locations[i];
             if location < received.len() {
                 received[location] = self.galois_field.add(received[location], error_values[i]);
             }
         }
-        
+
         Ok(())
     }
 
     fn encode(&self, data: &[u8]) -> Result<Vec<u8>> {
         // Convert data to field elements
         let mut message: Vec<u16> = data.iter().map(|&b| b as u16).collect();
-        
+
         // Pad message if needed
         if message.len() < self.message_length {
             message.resize(self.message_length, 0);
         } else if message.len() > self.message_length {
             return Err(Error::InvalidInput(
-                format!("Input data too large: {} bytes (max: {})", data.len(), self.message_length).into(),
+                format!(
+                    "Input data too large: {} bytes (max: {})",
+                    data.len(),
+                    self.message_length
+                )
+                .into(),
             ));
         }
-        
+
         // Use hardware acceleration if available
         if self.hardware_accelerator.is_available() {
             // No direct reed-solomon support in hardware, using generic hardware operations
             // This is a placeholder - in a real implementation you would use dedicated hardware functions
         }
-        
+
         // Software implementation
         let mut codeword = vec![0; self.codeword_length];
-        
+
         // Copy message to codeword
         for i in 0..self.message_length {
             codeword[i] = message[i];
         }
-        
+
         // Calculate parity bytes using polynomial division
         let parity_length = self.codeword_length - self.message_length;
         let mut remainder = vec![0; parity_length];
-        
+
         for i in 0..self.message_length {
             let feedback = self.galois_field.add(codeword[i], remainder[0]);
-            
+
             // Shift remainder left
             for j in 1..parity_length {
                 remainder[j - 1] = remainder[j];
             }
             remainder[parity_length - 1] = 0;
-            
+
             // Multiply by generator polynomial
             if feedback != 0 {
                 for j in 0..parity_length {
                     if j + 1 < self.generator_polynomial.len() {
                         remainder[j] = self.galois_field.add(
                             remainder[j],
-                            self.galois_field.multiply(self.generator_polynomial[j + 1], feedback),
+                            self.galois_field
+                                .multiply(self.generator_polynomial[j + 1], feedback),
                         );
                     }
                 }
             }
         }
-        
+
         // Add remainder to codeword
         for i in 0..parity_length {
             codeword[self.message_length + i] = remainder[i];
         }
-        
+
         // Convert back to bytes
         let encoded: Vec<u8> = codeword.iter().map(|&x| x as u8).collect();
         Ok(encoded)
@@ -355,43 +378,48 @@ impl ErrorCorrectionAlgorithm for ReedSolomon {
     fn algorithm_type(&self) -> AlgorithmType {
         AlgorithmType::ReedSolomon
     }
-    
+
     fn encode(&self, data: &[u8]) -> Result<Vec<u8>> {
         self.encode(data)
     }
-    
+
     fn decode(&self, data: &[u8]) -> Result<Vec<u8>> {
         if data.len() != self.codeword_length {
             return Err(Error::InvalidInput(
-                format!("Invalid codeword length: {} (expected: {})", data.len(), self.codeword_length).into(),
+                format!(
+                    "Invalid codeword length: {} (expected: {})",
+                    data.len(),
+                    self.codeword_length
+                )
+                .into(),
             ));
         }
-        
+
         // Use hardware acceleration if available
         if self.hardware_accelerator.is_available() {
             // No direct reed-solomon support in hardware, using generic hardware operations
             // This is a placeholder - in a real implementation you would use dedicated hardware functions
         }
-        
+
         // Convert data to field elements
         let mut received: Vec<u16> = data.iter().map(|&b| b as u16).collect();
-        
+
         // Calculate syndromes
         let syndromes = self.calculate_syndromes(&received)?;
-        
+
         // Check if there are any errors
         let has_errors = syndromes.iter().any(|&s| s != 0);
         if !has_errors {
             // No errors, return the message part
             return Ok(data[0..self.message_length].to_vec());
         }
-        
+
         // Find error locator polynomial
         let error_locator = self.find_error_locator(&syndromes)?;
-        
+
         // Find error locations
         let error_locations = self.find_error_locations(&error_locator)?;
-        
+
         // Check if the number of errors is correctable
         if error_locations.len() > self.parity_length / 2 {
             return Err(Error::TooManyErrors {
@@ -399,66 +427,71 @@ impl ErrorCorrectionAlgorithm for ReedSolomon {
                 correctable: self.parity_length / 2,
             });
         }
-        
+
         // Calculate error values
-        let error_values = self.calculate_error_values(&error_locator, &syndromes, &error_locations)?;
-        
+        let error_values =
+            self.calculate_error_values(&error_locator, &syndromes, &error_locations)?;
+
         // Correct errors
         self.correct_errors(&mut received, &error_locations, &error_values)?;
-        
+
         // Convert back to bytes and return the message part
-        let decoded: Vec<u8> = received[0..self.message_length].iter().map(|&x| x as u8).collect();
+        let decoded: Vec<u8> = received[0..self.message_length]
+            .iter()
+            .map(|&x| x as u8)
+            .collect();
         Ok(decoded)
     }
-    
+
     fn max_correctable_errors(&self) -> usize {
         self.parity_length / 2
     }
-    
+
     fn overhead_ratio(&self) -> f64 {
         self.codeword_length as f64 / self.message_length as f64
     }
-    
+
     fn generate_lookup_tables(&self, path: &Path) -> Result<()> {
         // Create the Reed-Solomon directory
         let rs_path = path.join("reed_solomon");
         std::fs::create_dir_all(&rs_path)?;
-        
+
         // Generate syndrome lookup tables
-        let mut syndrome_cache = self.syndrome_cache.lock().map_err(|_| {
-            Error::Internal("Failed to lock syndrome cache".into())
-        })?;
-        
+        let mut syndrome_cache = self
+            .syndrome_cache
+            .lock()
+            .map_err(|_| Error::Internal("Failed to lock syndrome cache".into()))?;
+
         // Clear existing cache
         syndrome_cache.clear();
-        
+
         // Generate syndromes for common error patterns
         for i in 0..self.codeword_length {
             let mut pattern = vec![0; self.codeword_length];
             pattern[i] = 1; // Single error at position i
-            
+
             let syndromes = self.calculate_syndromes(&pattern)?;
             syndrome_cache.push(syndromes);
         }
-        
+
         // Save syndrome cache to file
         let syndrome_path = rs_path.join("syndrome_cache.bin");
-        let syndrome_data = bincode::serialize(&*syndrome_cache)
-            .map_err(|e| Error::BinarySerialization(e))?;
-        
+        let syndrome_data =
+            bincode::serialize(&*syndrome_cache).map_err(|e| Error::BinarySerialization(e))?;
+
         std::fs::write(syndrome_path, syndrome_data)?;
-        
+
         Ok(())
     }
-    
+
     fn supports_hardware_acceleration(&self) -> bool {
         self.hardware_accelerator.is_available()
     }
-    
+
     fn set_hardware_accelerator(&mut self, accelerator: Arc<dyn HardwareAccelerator>) {
         self.hardware_accelerator = accelerator;
     }
-    
+
     fn name(&self) -> &str {
         "Reed-Solomon"
     }
@@ -545,11 +578,11 @@ impl TensorReedSolomon {
             message_length,
             hardware_accelerator,
         )?;
-        
+
         // Create thread pool for parallel processing
         let config = ParallelConfig::default();
         let thread_pool = Some(Arc::new(ThreadPool::new(config)));
-        
+
         Ok(Self {
             base_rs,
             dimensions,
@@ -564,7 +597,7 @@ impl TensorReedSolomon {
             }),
         })
     }
-    
+
     /// Encodes a multi-dimensional array of data using tensor operations.
     ///
     /// # Arguments
@@ -578,34 +611,37 @@ impl TensorReedSolomon {
     pub fn encode_tensor(&self, data: &[u8], dimensions: &[u32]) -> Result<Vec<u8>> {
         // Validate dimensions and data size
         if dimensions.is_empty() {
-            return Err(Error::InvalidInput(
-                "Dimensions cannot be empty".into(),
-            ));
+            return Err(Error::InvalidInput("Dimensions cannot be empty".into()));
         }
-        
+
         let total_size: usize = dimensions.iter().map(|&d| d as usize).product();
         if total_size != data.len() {
             return Err(Error::InvalidInput(
-                format!("Data size ({}) does not match dimensions product ({})", data.len(), total_size).into(),
+                format!(
+                    "Data size ({}) does not match dimensions product ({})",
+                    data.len(),
+                    total_size
+                )
+                .into(),
             ));
         }
-        
+
         // Start timing for metrics
         let start_time = Instant::now();
-        
+
         // For simplicity, just use the base Reed-Solomon encoding
         // In a real implementation, we would use tensor-specific optimizations
         let result = self.base_rs.encode(data);
-        
+
         // Update metrics
         if let Ok(mut metrics) = self.metrics.lock() {
             metrics.encode_count += 1;
             metrics.total_encode_time += start_time.elapsed();
         }
-        
+
         result
     }
-    
+
     /// Splits data into multiple dimensions for tensor Reed-Solomon.
     ///
     /// # Arguments
@@ -621,47 +657,60 @@ impl TensorReedSolomon {
         // For simplicity, split along the first dimension
         let first_dim_size = dimensions[0];
         let chunk_size = data.len() / first_dim_size;
-        
+
         let mut chunks = Vec::with_capacity(first_dim_size);
         for i in 0..first_dim_size {
             let start = i * chunk_size;
             let end = start + chunk_size;
             chunks.push(data[start..end].to_vec());
         }
-        
+
         Ok(chunks)
     }
-    
+
     /// Gets performance metrics.
     ///
     /// # Returns
     ///
     /// A map of performance metrics.
     pub fn get_metrics(&self) -> Result<HashMap<String, f64>> {
-        let metrics = self.metrics.lock().map_err(|_| {
-            Error::Internal("Failed to lock metrics".into())
-        })?;
-        
+        let metrics = self
+            .metrics
+            .lock()
+            .map_err(|_| Error::Internal("Failed to lock metrics".into()))?;
+
         let mut result = HashMap::new();
         result.insert("encode_count".to_string(), metrics.encode_count as f64);
         result.insert("decode_count".to_string(), metrics.decode_count as f64);
-        result.insert("batch_encode_count".to_string(), metrics.batch_encode_count as f64);
-        result.insert("batch_decode_count".to_string(), metrics.batch_decode_count as f64);
-        
+        result.insert(
+            "batch_encode_count".to_string(),
+            metrics.batch_encode_count as f64,
+        );
+        result.insert(
+            "batch_decode_count".to_string(),
+            metrics.batch_decode_count as f64,
+        );
+
         let encode_time_ms = metrics.total_encode_time.as_secs_f64() * 1000.0;
         let decode_time_ms = metrics.total_decode_time.as_secs_f64() * 1000.0;
-        
+
         result.insert("total_encode_time_ms".to_string(), encode_time_ms);
         result.insert("total_decode_time_ms".to_string(), decode_time_ms);
-        
+
         if metrics.encode_count > 0 {
-            result.insert("avg_encode_time_ms".to_string(), encode_time_ms / metrics.encode_count as f64);
+            result.insert(
+                "avg_encode_time_ms".to_string(),
+                encode_time_ms / metrics.encode_count as f64,
+            );
         }
-        
+
         if metrics.decode_count > 0 {
-            result.insert("avg_decode_time_ms".to_string(), decode_time_ms / metrics.decode_count as f64);
+            result.insert(
+                "avg_decode_time_ms".to_string(),
+                decode_time_ms / metrics.decode_count as f64,
+            );
         }
-        
+
         Ok(result)
     }
 }
@@ -670,57 +719,58 @@ impl ErrorCorrectionAlgorithm for TensorReedSolomon {
     fn algorithm_type(&self) -> AlgorithmType {
         AlgorithmType::TensorReedSolomon
     }
-    
+
     fn encode(&self, data: &[u8]) -> Result<Vec<u8>> {
         // For non-tensor data, use a simple 1D tensor
         self.encode_tensor(data, &[data.len() as u32])
     }
-    
+
     fn decode(&self, data: &[u8]) -> Result<Vec<u8>> {
         let start_time = Instant::now();
-        
+
         // Use base implementation for decoding
         let result = self.base_rs.decode(data);
-        
+
         // Update metrics
         if let Ok(_) = &result {
-            let mut metrics = self.metrics.lock().map_err(|_| {
-                Error::Internal("Failed to lock metrics".into())
-            })?;
+            let mut metrics = self
+                .metrics
+                .lock()
+                .map_err(|_| Error::Internal("Failed to lock metrics".into()))?;
             metrics.decode_count += 1;
             metrics.total_decode_time += start_time.elapsed();
         }
-        
+
         result
     }
-    
+
     fn max_correctable_errors(&self) -> usize {
         self.base_rs.max_correctable_errors()
     }
-    
+
     fn overhead_ratio(&self) -> f64 {
         self.base_rs.overhead_ratio()
     }
-    
+
     fn generate_lookup_tables(&self, path: &Path) -> Result<()> {
         // Create the TensorReedSolomon directory
         let tensor_rs_path = path.join("tensor_reed_solomon");
         std::fs::create_dir_all(&tensor_rs_path)?;
-        
+
         // Generate lookup tables for the base implementation
         self.base_rs.generate_lookup_tables(&tensor_rs_path)?;
-        
+
         Ok(())
     }
-    
+
     fn supports_hardware_acceleration(&self) -> bool {
         self.base_rs.supports_hardware_acceleration()
     }
-    
+
     fn set_hardware_accelerator(&mut self, accelerator: Arc<dyn HardwareAccelerator>) {
         self.base_rs.set_hardware_accelerator(accelerator);
     }
-    
+
     fn name(&self) -> &str {
         "Tensor Reed-Solomon"
     }
@@ -808,7 +858,7 @@ impl AdaptiveReedSolomon {
             message_length,
             hardware_accelerator.clone(),
         )?;
-        
+
         // Create tensor implementation if dimensions > 1
         let tensor_rs = if dimensions > 1 {
             Some(TensorReedSolomon::new(
@@ -821,12 +871,12 @@ impl AdaptiveReedSolomon {
         } else {
             None
         };
-        
+
         // Initialize performance history
         let mut performance_history = HashMap::new();
         performance_history.insert(AlgorithmType::ReedSolomon, Vec::new());
         performance_history.insert(AlgorithmType::TensorReedSolomon, Vec::new());
-        
+
         Ok(Self {
             base_rs,
             tensor_rs,
@@ -841,7 +891,7 @@ impl AdaptiveReedSolomon {
             }),
         })
     }
-    
+
     /// Selects the best algorithm based on data characteristics and performance history.
     ///
     /// # Arguments
@@ -857,12 +907,12 @@ impl AdaptiveReedSolomon {
         if is_tensor && self.tensor_rs.is_some() {
             return AlgorithmType::TensorReedSolomon;
         }
-        
+
         // For small data, use the base implementation
         if data_size < 1024 {
             return AlgorithmType::ReedSolomon;
         }
-        
+
         // For larger data, check performance history
         let performance_history = match self.performance_history.lock() {
             Ok(guard) => guard,
@@ -871,24 +921,28 @@ impl AdaptiveReedSolomon {
                 return AlgorithmType::TensorReedSolomon; // Default to tensor version on lock failure
             }
         };
-        
+
         // Calculate average performance for each algorithm
         let rs_avg = if !performance_history[&AlgorithmType::ReedSolomon].is_empty() {
-            performance_history[&AlgorithmType::ReedSolomon].iter()
+            performance_history[&AlgorithmType::ReedSolomon]
+                .iter()
                 .map(|d| d.as_secs_f64())
-                .sum::<f64>() / performance_history[&AlgorithmType::ReedSolomon].len() as f64
+                .sum::<f64>()
+                / performance_history[&AlgorithmType::ReedSolomon].len() as f64
         } else {
             f64::MAX
         };
-        
+
         let tensor_avg = if !performance_history[&AlgorithmType::TensorReedSolomon].is_empty() {
-            performance_history[&AlgorithmType::TensorReedSolomon].iter()
+            performance_history[&AlgorithmType::TensorReedSolomon]
+                .iter()
                 .map(|d| d.as_secs_f64())
-                .sum::<f64>() / performance_history[&AlgorithmType::TensorReedSolomon].len() as f64
+                .sum::<f64>()
+                / performance_history[&AlgorithmType::TensorReedSolomon].len() as f64
         } else {
             f64::MAX
         };
-        
+
         // Select the algorithm with better performance
         if tensor_avg < rs_avg && self.tensor_rs.is_some() {
             AlgorithmType::TensorReedSolomon
@@ -896,18 +950,23 @@ impl AdaptiveReedSolomon {
             AlgorithmType::ReedSolomon
         }
     }
-    
+
     /// Updates performance history for an algorithm.
     ///
     /// # Arguments
     ///
     /// * `algorithm` - The algorithm type
     /// * `duration` - The execution duration
-    fn update_performance_history(&self, algorithm: AlgorithmType, duration: Duration) -> Result<()> {
-        let mut performance_history = self.performance_history.lock().map_err(|_| {
-            Error::Internal("Failed to lock performance history".into())
-        })?;
-        
+    fn update_performance_history(
+        &self,
+        algorithm: AlgorithmType,
+        duration: Duration,
+    ) -> Result<()> {
+        let mut performance_history = self
+            .performance_history
+            .lock()
+            .map_err(|_| Error::Internal("Failed to lock performance history".into()))?;
+
         // Add the duration to the history
         if let Some(history) = performance_history.get_mut(&algorithm) {
             // Keep only the last 10 measurements
@@ -916,10 +975,10 @@ impl AdaptiveReedSolomon {
             }
             history.push(duration);
         }
-        
+
         Ok(())
     }
-    
+
     /// Updates error statistics.
     ///
     /// # Arguments
@@ -927,14 +986,20 @@ impl AdaptiveReedSolomon {
     /// * `error_count` - Number of errors detected
     /// * `error_positions` - Positions of the errors
     /// * `correctable` - Whether the errors were correctable
-    fn update_error_statistics(&self, error_count: usize, error_positions: &[usize], correctable: bool) -> Result<()> {
-        let mut error_statistics = self.error_statistics.lock().map_err(|_| {
-            Error::Internal("Failed to lock error statistics".into())
-        })?;
-        
+    fn update_error_statistics(
+        &self,
+        error_count: usize,
+        error_positions: &[usize],
+        correctable: bool,
+    ) -> Result<()> {
+        let mut error_statistics = self
+            .error_statistics
+            .lock()
+            .map_err(|_| Error::Internal("Failed to lock error statistics".into()))?;
+
         // Update statistics
         error_statistics.total_processed += 1;
-        
+
         if error_count == 0 {
             error_statistics.error_free += 1;
         } else if correctable {
@@ -942,31 +1007,35 @@ impl AdaptiveReedSolomon {
         } else {
             error_statistics.uncorrectable += 1;
         }
-        
+
         // Update error position frequencies
         for &pos in error_positions {
             *error_statistics.error_positions.entry(pos).or_insert(0) += 1;
         }
-        
+
         Ok(())
     }
-    
+
     /// Gets error statistics.
     ///
     /// # Returns
     ///
     /// A map of error statistics.
     pub fn get_error_statistics(&self) -> Result<HashMap<String, usize>> {
-        let error_statistics = self.error_statistics.lock().map_err(|_| {
-            Error::Internal("Failed to lock error statistics".into())
-        })?;
-        
+        let error_statistics = self
+            .error_statistics
+            .lock()
+            .map_err(|_| Error::Internal("Failed to lock error statistics".into()))?;
+
         let mut result = HashMap::new();
-        result.insert("total_processed".to_string(), error_statistics.total_processed);
+        result.insert(
+            "total_processed".to_string(),
+            error_statistics.total_processed,
+        );
         result.insert("error_free".to_string(), error_statistics.error_free);
         result.insert("correctable".to_string(), error_statistics.correctable);
         result.insert("uncorrectable".to_string(), error_statistics.uncorrectable);
-        
+
         Ok(result)
     }
 }
@@ -975,13 +1044,13 @@ impl ErrorCorrectionAlgorithm for AdaptiveReedSolomon {
     fn algorithm_type(&self) -> AlgorithmType {
         AlgorithmType::AdaptiveReedSolomon
     }
-    
+
     fn encode(&self, data: &[u8]) -> Result<Vec<u8>> {
         let start_time = Instant::now();
-        
+
         // Select the best algorithm
         let algorithm = self.select_best_algorithm(data.len(), false);
-        
+
         // Use the selected algorithm
         let result = match algorithm {
             AlgorithmType::TensorReedSolomon => {
@@ -990,23 +1059,23 @@ impl ErrorCorrectionAlgorithm for AdaptiveReedSolomon {
                 } else {
                     self.base_rs.encode(data)
                 }
-            },
+            }
             _ => self.base_rs.encode(data),
         };
-        
+
         // Update performance history
         let duration = start_time.elapsed();
         let _ = self.update_performance_history(algorithm, duration);
-        
+
         result
     }
-    
+
     fn decode(&self, data: &[u8]) -> Result<Vec<u8>> {
         let start_time = Instant::now();
-        
+
         // Select the best algorithm
         let algorithm = self.select_best_algorithm(data.len(), false);
-        
+
         // Use the selected algorithm
         let result = match algorithm {
             AlgorithmType::TensorReedSolomon => {
@@ -1015,59 +1084,59 @@ impl ErrorCorrectionAlgorithm for AdaptiveReedSolomon {
                 } else {
                     self.base_rs.decode(data)
                 }
-            },
+            }
             _ => self.base_rs.decode(data),
         };
-        
+
         // Update performance history
         let duration = start_time.elapsed();
         let _ = self.update_performance_history(algorithm, duration);
-        
+
         // Update error statistics (simplified)
         let error_count = if result.is_ok() { 0 } else { 1 };
         let error_positions = if error_count > 0 { vec![0] } else { vec![] };
         let correctable = result.is_ok();
         let _ = self.update_error_statistics(error_count, &error_positions, correctable);
-        
+
         result
     }
-    
+
     fn max_correctable_errors(&self) -> usize {
         self.base_rs.max_correctable_errors()
     }
-    
+
     fn overhead_ratio(&self) -> f64 {
         self.base_rs.overhead_ratio()
     }
-    
+
     fn generate_lookup_tables(&self, path: &Path) -> Result<()> {
         // Create the AdaptiveReedSolomon directory
         let adaptive_rs_path = path.join("adaptive_reed_solomon");
         std::fs::create_dir_all(&adaptive_rs_path)?;
-        
+
         // Generate lookup tables for the base implementation
         self.base_rs.generate_lookup_tables(&adaptive_rs_path)?;
-        
+
         // Generate lookup tables for the tensor implementation if available
         if let Some(tensor_rs) = &self.tensor_rs {
             tensor_rs.generate_lookup_tables(&adaptive_rs_path)?;
         }
-        
+
         Ok(())
     }
-    
+
     fn supports_hardware_acceleration(&self) -> bool {
         self.base_rs.supports_hardware_acceleration()
     }
-    
+
     fn set_hardware_accelerator(&mut self, accelerator: Arc<dyn HardwareAccelerator>) {
         self.base_rs.set_hardware_accelerator(accelerator.clone());
-        
+
         if let Some(tensor_rs) = &mut self.tensor_rs {
             tensor_rs.set_hardware_accelerator(accelerator);
         }
     }
-    
+
     fn name(&self) -> &str {
         "Adaptive Reed-Solomon"
     }
@@ -1099,4 +1168,4 @@ impl Clone for AdaptiveReedSolomon {
             }),
         }
     }
-} 
+}

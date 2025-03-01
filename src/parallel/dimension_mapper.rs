@@ -4,12 +4,12 @@
 //! for parallel processing. It includes features like dimension splitting, region
 //! mapping, and efficient data access patterns.
 
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 
+use super::{Dimension, ParallelConfig, Region, WorkItem, WorkScheduler};
 use crate::error::{Error, Result};
 use crate::parallel::work_scheduler::WorkItemHandler;
-use super::{Dimension, Region, WorkItem, WorkScheduler, ParallelConfig};
 
 /// A dimension mapper for multi-dimensional data processing.
 #[derive(Debug)]
@@ -64,7 +64,7 @@ impl DimensionMapper {
             splitting_strategy: SplittingStrategy::Largest,
         }
     }
-    
+
     /// Creates a new dimension mapper with the given scheduler and default configuration.
     ///
     /// # Arguments
@@ -77,7 +77,7 @@ impl DimensionMapper {
     pub fn with_scheduler(scheduler: Arc<WorkScheduler>) -> Self {
         Self::new(scheduler, ParallelConfig::default())
     }
-    
+
     /// Sets the dimensions of the data.
     ///
     /// # Arguments
@@ -92,7 +92,7 @@ impl DimensionMapper {
         self.regions = vec![Region::new(self.dimensions.clone())];
         self
     }
-    
+
     /// Sets the splitting strategy for the mapper.
     ///
     /// # Arguments
@@ -106,7 +106,7 @@ impl DimensionMapper {
         self.splitting_strategy = strategy;
         self
     }
-    
+
     /// Splits the data into regions for parallel processing.
     ///
     /// # Arguments
@@ -120,73 +120,78 @@ impl DimensionMapper {
         if self.dimensions.is_empty() {
             return Err(Error::InvalidInput("No dimensions defined".into()));
         }
-        
+
         // Determine which dimension to split along
         let split_dim_index = match self.splitting_strategy {
             SplittingStrategy::Largest => {
                 // Find the largest dimension
                 let mut largest_index = 0;
                 let mut largest_size = 0;
-                
+
                 for (i, dim) in self.dimensions.iter().enumerate() {
                     if dim.size > largest_size {
                         largest_index = i;
                         largest_size = dim.size;
                     }
                 }
-                
+
                 largest_index
-            },
+            }
             SplittingStrategy::Smallest => {
                 // Find the smallest dimension
                 let mut smallest_index = 0;
                 let mut smallest_size = usize::MAX;
-                
+
                 for (i, dim) in self.dimensions.iter().enumerate() {
                     if dim.size < smallest_size {
                         smallest_index = i;
                         smallest_size = dim.size;
                     }
                 }
-                
+
                 smallest_index
-            },
+            }
             SplittingStrategy::Even => {
                 // Split evenly across all dimensions
                 // For now, just use the largest dimension
                 // TODO: Implement even splitting
                 let mut largest_index = 0;
                 let mut largest_size = 0;
-                
+
                 for (i, dim) in self.dimensions.iter().enumerate() {
                     if dim.size > largest_size {
                         largest_index = i;
                         largest_size = dim.size;
                     }
                 }
-                
+
                 largest_index
-            },
+            }
             SplittingStrategy::First => 0,
             SplittingStrategy::Last => self.dimensions.len() - 1,
             SplittingStrategy::Specific(index) => {
                 if index >= self.dimensions.len() {
                     return Err(Error::InvalidInput(
-                        format!("Dimension index {} out of bounds (max: {})", index, self.dimensions.len() - 1).into(),
+                        format!(
+                            "Dimension index {} out of bounds (max: {})",
+                            index,
+                            self.dimensions.len() - 1
+                        )
+                        .into(),
                     ));
                 }
-                
+
                 index
-            },
+            }
         };
-        
+
         // Split the region
         let base_region = Region::new(self.dimensions.clone());
         self.regions = base_region.split(split_dim_index, thread_count);
-        
+
         Ok(self)
     }
-    
+
     /// Maps a function over the regions in parallel.
     ///
     /// # Arguments
@@ -203,9 +208,11 @@ impl DimensionMapper {
         if self.regions.is_empty() {
             return Err(Error::InvalidInput("No regions defined".into()));
         }
-        
+
         // Create a work item for each region
-        let work_items: Vec<_> = self.regions.iter()
+        let work_items: Vec<_> = self
+            .regions
+            .iter()
             .enumerate()
             .map(|(i, region)| {
                 WorkItem {
@@ -215,12 +222,12 @@ impl DimensionMapper {
                 }
             })
             .collect();
-        
+
         // Create a handler for the work items
         struct MapHandler<F: 'static> {
             f: Arc<F>,
         }
-        
+
         impl<F> WorkItemHandler for MapHandler<F>
         where
             F: Fn(&Region) -> Result<()> + Send + Sync + 'static,
@@ -228,7 +235,7 @@ impl DimensionMapper {
             fn process(&self, item: &WorkItem) -> Result<()> {
                 (self.f)(&item.region)
             }
-            
+
             fn algorithm_type(&self) -> crate::algorithms::AlgorithmType {
                 crate::algorithms::AlgorithmType::ReedSolomon // Default algorithm
             }
@@ -239,21 +246,20 @@ impl DimensionMapper {
                 })
             }
         }
-        
+
         // Register the handler
-        self.scheduler.register_handler(MapHandler {
-            f: Arc::new(f),
-        })?;
-        
+        self.scheduler
+            .register_handler(MapHandler { f: Arc::new(f) })?;
+
         // Schedule the work items
         self.scheduler.schedule_batch(work_items)?;
-        
+
         // Wait for all work items to complete
         self.scheduler.wait()?;
-        
+
         Ok(())
     }
-    
+
     /// Maps a function over the regions in parallel and collects the results.
     ///
     /// # Arguments
@@ -271,12 +277,15 @@ impl DimensionMapper {
         if self.regions.is_empty() {
             return Err(Error::InvalidInput("No regions defined".into()));
         }
-        
+
         // Create a map to store the results
-        let results: Arc<parking_lot::Mutex<HashMap<usize, T>>> = Arc::new(parking_lot::Mutex::new(HashMap::new()));
-        
+        let results: Arc<parking_lot::Mutex<HashMap<usize, T>>> =
+            Arc::new(parking_lot::Mutex::new(HashMap::new()));
+
         // Create a work item for each region
-        let work_items: Vec<_> = self.regions.iter()
+        let work_items: Vec<_> = self
+            .regions
+            .iter()
             .enumerate()
             .map(|(i, region)| {
                 WorkItem {
@@ -286,13 +295,13 @@ impl DimensionMapper {
                 }
             })
             .collect();
-        
+
         // Create a handler for the work items
         struct MapCollectHandler<F: 'static, T: 'static> {
             f: Arc<F>,
             results: Arc<parking_lot::Mutex<HashMap<usize, T>>>,
         }
-        
+
         impl<F, T> WorkItemHandler for MapCollectHandler<F, T>
         where
             F: Fn(&Region) -> Result<T> + Send + Sync + 'static,
@@ -303,7 +312,7 @@ impl DimensionMapper {
                 self.results.lock().insert(item.priority, result);
                 Ok(())
             }
-            
+
             fn algorithm_type(&self) -> crate::algorithms::AlgorithmType {
                 crate::algorithms::AlgorithmType::ReedSolomon // Default algorithm
             }
@@ -315,23 +324,23 @@ impl DimensionMapper {
                 })
             }
         }
-        
+
         // Register the handler
         self.scheduler.register_handler(MapCollectHandler {
             f: Arc::new(f),
             results: Arc::clone(&results),
         })?;
-        
+
         // Schedule the work items
         self.scheduler.schedule_batch(work_items)?;
-        
+
         // Wait for all work items to complete
         self.scheduler.wait()?;
-        
+
         // Collect the results in order
         let results_map = results.lock();
         let mut results_vec = Vec::with_capacity(self.regions.len());
-        
+
         for i in 0..self.regions.len() {
             if let Some(result) = results_map.get(&i).cloned() {
                 results_vec.push(result);
@@ -341,27 +350,25 @@ impl DimensionMapper {
                 ));
             }
         }
-        
+
         Ok(results_vec)
     }
-    
+
     /// Returns the regions of the data.
     pub fn regions(&self) -> &[Region] {
         &self.regions
     }
-    
+
     /// Returns the dimensions of the data.
     pub fn dimensions(&self) -> &[Dimension] {
         &self.dimensions
     }
-    
+
     /// Returns the total size of the data.
     pub fn total_size(&self) -> usize {
-        self.dimensions.iter()
-            .map(|d| d.size)
-            .product()
+        self.dimensions.iter().map(|d| d.size).product()
     }
-    
+
     /// Creates a new dimension with the given size and stride.
     ///
     /// # Arguments
@@ -380,7 +387,7 @@ impl DimensionMapper {
             stride,
         }
     }
-    
+
     /// Creates dimensions for a multi-dimensional array.
     ///
     /// # Arguments
@@ -393,18 +400,18 @@ impl DimensionMapper {
     pub fn create_dimensions(sizes: &[usize]) -> Vec<Dimension> {
         let mut dimensions = Vec::with_capacity(sizes.len());
         let mut stride = 1;
-        
+
         for (i, &size) in sizes.iter().enumerate().rev() {
             dimensions.push(Dimension {
                 index: i,
                 size,
                 stride,
             });
-            
+
             stride *= size;
         }
-        
+
         dimensions.reverse();
         dimensions
     }
-} 
+}

@@ -8,9 +8,9 @@ use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
 
+use super::{AlgorithmType, ErrorCorrectionAlgorithm};
 use crate::error::{Error, Result};
 use crate::hardware::HardwareAccelerator;
-use super::{AlgorithmType, ErrorCorrectionAlgorithm};
 
 /// Implementation of Turbo codes for error correction.
 pub struct TurboCode {
@@ -44,7 +44,7 @@ impl TurboCode {
         // Default parameters for a rate 1/3 turbo code
         Self::with_params(3, 3, 1024, 8, hardware_accelerator)
     }
-    
+
     /// Creates a new Turbo code instance with the specified parameters.
     ///
     /// # Arguments
@@ -70,19 +70,17 @@ impl TurboCode {
                 "Constraint length must be at least 2".into(),
             ));
         }
-        
+
         if code_rate < 2 {
-            return Err(Error::InvalidInput(
-                "Code rate must be at least 2".into(),
-            ));
+            return Err(Error::InvalidInput("Code rate must be at least 2".into()));
         }
-        
+
         // Generate generator polynomials
         let generator_polynomials = Self::generate_polynomials(constraint_length, code_rate);
-        
+
         // Generate interleaver pattern
         let interleaver = Self::generate_interleaver(interleaver_size);
-        
+
         Ok(Self {
             constraint_length,
             code_rate,
@@ -93,7 +91,7 @@ impl TurboCode {
             hardware_accelerator,
         })
     }
-    
+
     /// Generates generator polynomials for the convolutional encoders.
     ///
     /// # Arguments
@@ -107,31 +105,31 @@ impl TurboCode {
     fn generate_polynomials(constraint_length: usize, code_rate: usize) -> Vec<u16> {
         // For simplicity, we'll use some standard polynomials
         // In a real implementation, these would be carefully chosen
-        
+
         match (constraint_length, code_rate) {
-            (3, 2) => vec![0b111, 0b101], // (7, 5) in octal
-            (3, 3) => vec![0b111, 0b101, 0b111], // (7, 5, 7) in octal
-            (4, 2) => vec![0b1111, 0b1101], // (17, 15) in octal
+            (3, 2) => vec![0b111, 0b101],           // (7, 5) in octal
+            (3, 3) => vec![0b111, 0b101, 0b111],    // (7, 5, 7) in octal
+            (4, 2) => vec![0b1111, 0b1101],         // (17, 15) in octal
             (4, 3) => vec![0b1111, 0b1101, 0b1011], // (17, 15, 13) in octal
             _ => {
                 // Generate some reasonable polynomials
                 let mut polynomials = Vec::with_capacity(code_rate);
-                
+
                 // First polynomial is always all 1s
                 polynomials.push((1 << constraint_length) - 1);
-                
+
                 // Generate other polynomials
                 for i in 1..code_rate {
                     // Simple pattern for demonstration
                     let poly = (1 << constraint_length) - 1 - (1 << i);
                     polynomials.push(poly as u16);
                 }
-                
+
                 polynomials
             }
         }
     }
-    
+
     /// Generates an interleaver pattern.
     ///
     /// # Arguments
@@ -144,21 +142,21 @@ impl TurboCode {
     fn generate_interleaver(size: usize) -> Vec<usize> {
         // For simplicity, we'll use a pseudo-random interleaver
         // In a real implementation, this would be carefully designed
-        
+
         let mut interleaver = Vec::with_capacity(size);
         for i in 0..size {
             interleaver.push(i);
         }
-        
+
         // Simple shuffle algorithm
         for i in 0..size {
             let j = (i * 17 + 13) % size; // Simple pseudo-random function
             interleaver.swap(i, j);
         }
-        
+
         interleaver
     }
-    
+
     /// Encodes a message using the turbo encoder.
     ///
     /// # Arguments
@@ -176,43 +174,48 @@ impl TurboCode {
                 message_bits.push((byte >> (7 - i)) & 1);
             }
         }
-        
+
         // Pad message if needed
         if message_bits.len() < self.interleaver_size {
             message_bits.resize(self.interleaver_size, 0);
         } else if message_bits.len() > self.interleaver_size {
             return Err(Error::InvalidInput(
-                format!("Input data too large: {} bits (max: {})", message_bits.len(), self.interleaver_size).into(),
+                format!(
+                    "Input data too large: {} bits (max: {})",
+                    message_bits.len(),
+                    self.interleaver_size
+                )
+                .into(),
             ));
         }
-        
+
         // Encode with first encoder
         let systematic_bits = message_bits.clone();
         let parity1_bits = self.encode_convolutional(&systematic_bits)?;
-        
+
         // Interleave message
         let mut interleaved_bits = vec![0; self.interleaver_size];
         for i in 0..self.interleaver_size {
             interleaved_bits[i] = message_bits[self.interleaver[i]];
         }
-        
+
         // Encode with second encoder
         let parity2_bits = self.encode_convolutional(&interleaved_bits)?;
-        
+
         // Combine all bits (systematic + parity1 + parity2)
         let mut encoded_bits = Vec::with_capacity(systematic_bits.len() * self.code_rate);
-        
+
         for i in 0..systematic_bits.len() {
             // Add systematic bit
             encoded_bits.push(systematic_bits[i]);
-            
+
             // Add parity bits
             encoded_bits.push(parity1_bits[i]);
             if self.code_rate > 2 {
                 encoded_bits.push(parity2_bits[i]);
             }
         }
-        
+
         // Convert bits back to bytes
         let mut encoded = Vec::with_capacity((encoded_bits.len() + 7) / 8);
         for chunk in encoded_bits.chunks(8) {
@@ -224,10 +227,10 @@ impl TurboCode {
             }
             encoded.push(byte);
         }
-        
+
         Ok(encoded)
     }
-    
+
     /// Encodes a message using a convolutional encoder.
     ///
     /// # Arguments
@@ -240,14 +243,14 @@ impl TurboCode {
     fn encode_convolutional(&self, message: &[u8]) -> Result<Vec<u8>> {
         let mut parity_bits = vec![0; message.len()];
         let mut shift_reg = vec![0; self.constraint_length];
-        
+
         for i in 0..message.len() {
             // Shift in the new bit
             for j in (1..self.constraint_length).rev() {
                 shift_reg[j] = shift_reg[j - 1];
             }
             shift_reg[0] = message[i];
-            
+
             // Calculate parity bit using the first generator polynomial
             let mut parity = 0;
             for j in 0..self.constraint_length {
@@ -255,13 +258,13 @@ impl TurboCode {
                     parity ^= shift_reg[j];
                 }
             }
-            
+
             parity_bits[i] = parity;
         }
-        
+
         Ok(parity_bits)
     }
-    
+
     /// Decodes a codeword using the turbo decoder.
     ///
     /// # Arguments
@@ -279,7 +282,7 @@ impl TurboCode {
                 codeword_bits.push((byte >> (7 - i)) & 1);
             }
         }
-        
+
         // Check if codeword size is valid
         if codeword_bits.len() < self.interleaver_size * self.code_rate {
             return Err(Error::InvalidInput(
@@ -291,12 +294,12 @@ impl TurboCode {
                 .into(),
             ));
         }
-        
+
         // Extract systematic and parity bits
         let mut systematic_bits = Vec::with_capacity(self.interleaver_size);
         let mut parity1_bits = Vec::with_capacity(self.interleaver_size);
         let mut parity2_bits = Vec::with_capacity(self.interleaver_size);
-        
+
         for i in 0..self.interleaver_size {
             let idx = i * self.code_rate;
             if idx + self.code_rate <= codeword_bits.len() {
@@ -307,10 +310,10 @@ impl TurboCode {
                 }
             }
         }
-        
+
         // In a real implementation, we would perform iterative decoding using BCJR algorithm
         // For simplicity, we'll just return the systematic bits
-        
+
         // Convert bits back to bytes
         let mut decoded = Vec::with_capacity((systematic_bits.len() + 7) / 8);
         for chunk in systematic_bits.chunks(8) {
@@ -322,7 +325,7 @@ impl TurboCode {
             }
             decoded.push(byte);
         }
-        
+
         Ok(decoded)
     }
 }
@@ -331,72 +334,79 @@ impl ErrorCorrectionAlgorithm for TurboCode {
     fn algorithm_type(&self) -> AlgorithmType {
         AlgorithmType::Turbo
     }
-    
+
     fn encode(&self, data: &[u8]) -> Result<Vec<u8>> {
         // Use hardware acceleration if available
         if self.hardware_accelerator.is_available() && self.hardware_accelerator.supports_turbo() {
-            return self.hardware_accelerator
+            return self
+                .hardware_accelerator
                 .turbo_encode(data, self.constraint_length, self.code_rate)
                 .map_err(|e| Error::HardwareAcceleration(e.to_string()));
         }
-        
+
         // Software implementation
         self.encode_message(data)
     }
-    
+
     fn decode(&self, data: &[u8]) -> Result<Vec<u8>> {
         // Use hardware acceleration if available
         if self.hardware_accelerator.is_available() && self.hardware_accelerator.supports_turbo() {
-            return self.hardware_accelerator
-                .turbo_decode(data, self.constraint_length, self.code_rate, self.max_iterations)
+            return self
+                .hardware_accelerator
+                .turbo_decode(
+                    data,
+                    self.constraint_length,
+                    self.code_rate,
+                    self.max_iterations,
+                )
                 .map_err(|e| Error::HardwareAcceleration(e.to_string()));
         }
-        
+
         // Software implementation
         self.decode_codeword(data)
     }
-    
+
     fn max_correctable_errors(&self) -> usize {
         // Turbo codes can correct a large number of errors
         // The exact number depends on the code parameters and SNR
         // For simplicity, we'll use a conservative estimate
         self.interleaver_size / 10
     }
-    
+
     fn overhead_ratio(&self) -> f64 {
         self.code_rate as f64
     }
-    
+
     fn generate_lookup_tables(&self, path: &Path) -> Result<()> {
         // Create the Turbo directory
         let turbo_path = path.join("turbo");
         std::fs::create_dir_all(&turbo_path)?;
-        
+
         // Save interleaver pattern
         let interleaver_path = turbo_path.join("interleaver.bin");
-        let interleaver_data = bincode::serialize(&self.interleaver)
-            .map_err(|e| Error::BinarySerialization(e))?;
-        
+        let interleaver_data =
+            bincode::serialize(&self.interleaver).map_err(|e| Error::BinarySerialization(e))?;
+
         std::fs::write(interleaver_path, interleaver_data)?;
-        
+
         // Save generator polynomials
         let poly_path = turbo_path.join("generator_polynomials.bin");
         let poly_data = bincode::serialize(&self.generator_polynomials)
             .map_err(|e| Error::BinarySerialization(e))?;
-        
+
         std::fs::write(poly_path, poly_data)?;
-        
+
         Ok(())
     }
-    
+
     fn supports_hardware_acceleration(&self) -> bool {
         self.hardware_accelerator.is_available() && self.hardware_accelerator.supports_turbo()
     }
-    
+
     fn set_hardware_accelerator(&mut self, accelerator: Arc<dyn HardwareAccelerator>) {
         self.hardware_accelerator = accelerator;
     }
-    
+
     fn name(&self) -> &str {
         "Turbo Code"
     }
@@ -413,4 +423,4 @@ impl fmt::Debug for TurboCode {
             .field("overhead_ratio", &self.overhead_ratio())
             .finish()
     }
-} 
+}

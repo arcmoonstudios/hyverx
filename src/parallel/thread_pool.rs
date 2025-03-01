@@ -4,13 +4,16 @@
 //! It includes features like work stealing, dynamic load balancing, and adaptive
 //! chunk sizing for efficient parallel processing.
 
-use std::sync::{Arc, Mutex, Condvar, atomic::{AtomicBool, AtomicUsize, Ordering}};
-use std::thread;
 use std::collections::VecDeque;
+use std::sync::{
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    Arc, Condvar, Mutex,
+};
+use std::thread;
 use std::time::{Duration, Instant};
 
+use super::{ParallelConfig, ParallelStats, Task};
 use crate::error::{Error, Result};
-use super::{Task, ParallelStats, ParallelConfig};
 
 /// A thread pool for executing tasks in parallel.
 pub struct ThreadPool {
@@ -63,9 +66,9 @@ impl ThreadPool {
         let shutdown = Arc::new(AtomicBool::new(false));
         let active_tasks = Arc::new(AtomicUsize::new(0));
         let stats = Arc::new(Mutex::new(ParallelStats::default()));
-        
+
         let mut workers = Vec::with_capacity(config.thread_count);
-        
+
         for id in 0..config.thread_count {
             workers.push(Worker::new(
                 id,
@@ -77,7 +80,7 @@ impl ThreadPool {
                 config.clone(),
             ));
         }
-        
+
         Self {
             workers,
             queue,
@@ -88,7 +91,7 @@ impl ThreadPool {
             config,
         }
     }
-    
+
     /// Creates a new thread pool with the default configuration.
     ///
     /// # Returns
@@ -97,7 +100,7 @@ impl ThreadPool {
     pub fn default() -> Self {
         Self::new(ParallelConfig::default())
     }
-    
+
     /// Executes a task in the thread pool.
     ///
     /// # Arguments
@@ -112,35 +115,41 @@ impl ThreadPool {
         F: FnOnce() + Send + 'static,
     {
         if self.shutdown.load(Ordering::SeqCst) {
-            return Err(Error::ThreadPoolShutdown("Thread pool is shutting down".to_string()));
+            return Err(Error::ThreadPoolShutdown(
+                "Thread pool is shutting down".to_string(),
+            ));
         }
-        
+
         let task = Box::new(f);
-        
-        let mut queue = self.queue.lock().map_err(|_| {
-            Error::Internal("Failed to lock task queue".into())
-        })?;
-        
+
+        let mut queue = self
+            .queue
+            .lock()
+            .map_err(|_| Error::Internal("Failed to lock task queue".into()))?;
+
         if queue.len() >= self.config.max_queue_size {
-            return Err(Error::QueueFull("Task queue is at maximum capacity".to_string()));
+            return Err(Error::QueueFull(
+                "Task queue is at maximum capacity".to_string(),
+            ));
         }
-        
+
         queue.push_back(task);
-        
+
         // Update statistics
         {
-            let mut stats = self.stats.lock().map_err(|_| {
-                Error::Internal("Failed to lock stats".into())
-            })?;
+            let mut stats = self
+                .stats
+                .lock()
+                .map_err(|_| Error::Internal("Failed to lock stats".into()))?;
             stats.tasks_queued += 1;
         }
-        
+
         // Notify a worker
         self.condvar.notify_one();
-        
+
         Ok(())
     }
-    
+
     /// Waits for all tasks to complete.
     ///
     /// # Returns
@@ -148,17 +157,21 @@ impl ThreadPool {
     /// `Ok(())` if all tasks completed successfully, or an error if waiting failed.
     pub fn wait(&self) -> Result<()> {
         let mut last_active = self.active_tasks.load(Ordering::SeqCst);
-        
-        while last_active > 0 || !self.queue.lock().map_err(|_| {
-            Error::Internal("Failed to lock task queue".into())
-        })?.is_empty() {
+
+        while last_active > 0
+            || !self
+                .queue
+                .lock()
+                .map_err(|_| Error::Internal("Failed to lock task queue".into()))?
+                .is_empty()
+        {
             thread::sleep(Duration::from_millis(10));
             last_active = self.active_tasks.load(Ordering::SeqCst);
         }
-        
+
         Ok(())
     }
-    
+
     /// Shuts down the thread pool.
     ///
     /// This will wait for all tasks to complete before shutting down.
@@ -169,50 +182,52 @@ impl ThreadPool {
     pub fn shutdown(&mut self) -> Result<()> {
         // Wait for all tasks to complete
         self.wait()?;
-        
+
         // Signal shutdown
         self.shutdown.store(true, Ordering::SeqCst);
-        
+
         // Notify all workers
         self.condvar.notify_all();
-        
+
         // Join worker threads
         for worker in &mut self.workers {
             if let Some(thread) = worker.thread.take() {
-                thread.join().map_err(|_| {
-                    Error::Internal("Failed to join worker thread".into())
-                })?;
+                thread
+                    .join()
+                    .map_err(|_| Error::Internal("Failed to join worker thread".into()))?;
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Returns the number of worker threads in the pool.
     pub fn thread_count(&self) -> usize {
         self.workers.len()
     }
-    
+
     /// Returns the number of queued tasks.
     pub fn queued_tasks(&self) -> Result<usize> {
-        let queue = self.queue.lock().map_err(|_| {
-            Error::Internal("Failed to lock task queue".into())
-        })?;
-        
+        let queue = self
+            .queue
+            .lock()
+            .map_err(|_| Error::Internal("Failed to lock task queue".into()))?;
+
         Ok(queue.len())
     }
-    
+
     /// Returns the number of active tasks.
     pub fn active_tasks(&self) -> usize {
         self.active_tasks.load(Ordering::SeqCst)
     }
-    
+
     /// Returns statistics for the thread pool.
     pub fn stats(&self) -> Result<ParallelStats> {
-        let stats = self.stats.lock().map_err(|_| {
-            Error::Internal("Failed to lock stats".into())
-        })?;
-        
+        let stats = self
+            .stats
+            .lock()
+            .map_err(|_| Error::Internal("Failed to lock stats".into()))?;
+
         Ok(stats.clone())
     }
 }
@@ -221,10 +236,10 @@ impl Drop for ThreadPool {
     fn drop(&mut self) {
         // Signal shutdown
         self.shutdown.store(true, Ordering::SeqCst);
-        
+
         // Notify all workers
         self.condvar.notify_all();
-        
+
         // Join worker threads
         for worker in &mut self.workers {
             if let Some(thread) = worker.thread.take() {
@@ -260,23 +275,15 @@ impl Worker {
         config: ParallelConfig,
     ) -> Self {
         let thread = thread::spawn(move || {
-            Self::run(
-                id,
-                queue,
-                condvar,
-                shutdown,
-                active_tasks,
-                stats,
-                config,
-            );
+            Self::run(id, queue, condvar, shutdown, active_tasks, stats, config);
         });
-        
+
         Self {
             thread: Some(thread),
             id,
         }
     }
-    
+
     /// Runs the worker thread.
     ///
     /// This function will loop until the pool is shut down, executing tasks from the queue.
@@ -291,56 +298,59 @@ impl Worker {
     ) {
         let _id = id; // Use ID in log messages or worker identification
         let _config = config; // Use config for worker-specific settings
-        
+
         loop {
             // Get a task from the queue
             let task = {
                 let mut queue = queue.lock().unwrap();
-                
+
                 // Wait for a task or shutdown signal
                 while queue.is_empty() && !shutdown.load(Ordering::SeqCst) {
                     queue = condvar.wait(queue).unwrap();
                 }
-                
+
                 // Check for shutdown
                 if shutdown.load(Ordering::SeqCst) && queue.is_empty() {
                     break;
                 }
-                
+
                 queue.pop_front()
             };
-            
+
             // Execute the task
             if let Some(task) = task {
                 active_tasks.fetch_add(1, Ordering::SeqCst);
-                
+
                 let start_time = Instant::now();
-                
+
                 // Execute the task
                 task();
-                
+
                 let elapsed = start_time.elapsed();
-                
+
                 // Update statistics
                 {
                     let mut stats = stats.lock().unwrap();
                     stats.tasks_executed += 1;
                     stats.tasks_completed += 1;
                     stats.total_time_ms += elapsed.as_secs_f64() * 1000.0;
-                    
+
                     let task_time_ms = elapsed.as_secs_f64() * 1000.0;
-                    
+
                     if stats.tasks_executed == 1 {
                         stats.avg_task_time_ms = task_time_ms;
                         stats.max_task_time_ms = task_time_ms;
                         stats.min_task_time_ms = task_time_ms;
                     } else {
-                        stats.avg_task_time_ms = (stats.avg_task_time_ms * (stats.tasks_executed - 1) as f64 + task_time_ms) / stats.tasks_executed as f64;
+                        stats.avg_task_time_ms = (stats.avg_task_time_ms
+                            * (stats.tasks_executed - 1) as f64
+                            + task_time_ms)
+                            / stats.tasks_executed as f64;
                         stats.max_task_time_ms = stats.max_task_time_ms.max(task_time_ms);
                         stats.min_task_time_ms = stats.min_task_time_ms.min(task_time_ms);
                     }
                 }
-                
+
                 active_tasks.fetch_sub(1, Ordering::SeqCst);
             }
         }
@@ -358,4 +368,4 @@ impl std::fmt::Debug for ThreadPool {
             .field("config", &self.config)
             .finish()
     }
-} 
+}

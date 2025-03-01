@@ -4,8 +4,8 @@
 //! of the HyVERX error correction system, including hardware acceleration
 //! targets, algorithm selection, and performance tuning parameters.
 
-use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 /// Hardware acceleration target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -374,12 +374,10 @@ impl Config {
         }
 
         if self.ecc_size > self.max_ecc_size {
-            return Err(crate::Error::InvalidConfiguration(
-                format!(
-                    "ECC size ({}) cannot be greater than maximum ECC size ({})",
-                    self.ecc_size, self.max_ecc_size
-                ),
-            ));
+            return Err(crate::Error::InvalidConfiguration(format!(
+                "ECC size ({}) cannot be greater than maximum ECC size ({})",
+                self.ecc_size, self.max_ecc_size
+            )));
         }
 
         // Validate dimensions

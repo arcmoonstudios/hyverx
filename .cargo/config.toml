@@ -10,5 +10,5 @@ RUST_BACKTRACE = "1"
 RUST_LOG = "warn"
 
 # Add settings for rust-analyzer macro expansion
-[unstable.build-std]
-rustc-workspace-wrapper = true 
+[unstable]
+build-std = ["std", "core", "alloc"] 

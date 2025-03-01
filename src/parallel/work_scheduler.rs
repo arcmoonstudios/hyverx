@@ -4,13 +4,13 @@
 //! It includes features like priority-based scheduling, work stealing, and
 //! dynamic load balancing for efficient parallel processing.
 
-use std::sync::{Arc, Mutex};
-use std::collections::{BinaryHeap, HashMap};
 use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap};
+use std::sync::{Arc, Mutex};
 
-use crate::error::{Error, Result};
+use super::{ParallelConfig, ThreadPool, WorkItem};
 use crate::algorithms::AlgorithmType;
-use super::{ThreadPool, WorkItem, ParallelConfig};
+use crate::error::{Error, Result};
 
 /// A work scheduler for distributing work across threads.
 pub struct WorkScheduler {
@@ -45,10 +45,10 @@ pub trait WorkItemHandler: Send + Sync {
     ///
     /// `Ok(())` if the item was processed successfully, or an error if processing failed.
     fn process(&self, item: &WorkItem) -> Result<()>;
-    
+
     /// Returns the algorithm type this handler can process.
     fn algorithm_type(&self) -> AlgorithmType;
-    
+
     /// Creates a boxed clone of this handler.
     fn clone_box(&self) -> Box<dyn WorkItemHandler + Send + Sync>;
 }
@@ -70,7 +70,10 @@ impl PartialOrd for PrioritizedWorkItem {
 impl Ord for PrioritizedWorkItem {
     fn cmp(&self, other: &Self) -> Ordering {
         // Higher priority comes first
-        other.item.priority.cmp(&self.item.priority)
+        other
+            .item
+            .priority
+            .cmp(&self.item.priority)
             // For equal priorities, lower sequence number comes first
             .then_with(|| self.sequence.cmp(&other.sequence))
     }
@@ -85,16 +88,17 @@ struct HandlerWrapper {
 impl HandlerWrapper {
     fn execute(&self, scheduler: &WorkScheduler) -> Result<()> {
         // Lock the handlers once
-        let handlers = scheduler.handlers.lock().map_err(|_| {
-            Error::Internal("Failed to lock handlers".into())
-        })?;
-        
+        let handlers = scheduler
+            .handlers
+            .lock()
+            .map_err(|_| Error::Internal("Failed to lock handlers".into()))?;
+
         // Find the appropriate handler for this algorithm type
         if let Some(handler) = handlers.get(&self.algorithm_type) {
             // Process the item using the handler
             handler.process(&self.item)?;
         }
-        
+
         Ok(())
     }
 }
@@ -118,7 +122,7 @@ impl WorkScheduler {
             handlers: Mutex::new(HashMap::new()),
         }
     }
-    
+
     /// Creates a new work scheduler with the given thread pool and default configuration.
     ///
     /// # Arguments
@@ -131,7 +135,7 @@ impl WorkScheduler {
     pub fn with_thread_pool(thread_pool: Arc<ThreadPool>) -> Self {
         Self::new(thread_pool, ParallelConfig::default())
     }
-    
+
     /// Registers a handler for a specific algorithm type.
     ///
     /// # Arguments
@@ -146,16 +150,17 @@ impl WorkScheduler {
         H: WorkItemHandler + 'static,
     {
         let algorithm_type = handler.algorithm_type();
-        
-        let mut handlers = self.handlers.lock().map_err(|_| {
-            Error::Internal("Failed to lock handlers".into())
-        })?;
-        
+
+        let mut handlers = self
+            .handlers
+            .lock()
+            .map_err(|_| Error::Internal("Failed to lock handlers".into()))?;
+
         handlers.insert(algorithm_type, Box::new(handler));
-        
+
         Ok(())
     }
-    
+
     /// Schedules a work item for execution.
     ///
     /// # Arguments
@@ -167,34 +172,37 @@ impl WorkScheduler {
     /// `Ok(())` if the item was scheduled successfully, or an error if scheduling failed.
     pub fn schedule(&self, item: WorkItem) -> Result<()> {
         // Check if a handler exists for this algorithm type
-        let handlers = self.handlers.lock().map_err(|_| {
-            Error::Internal("Failed to lock handlers".into())
-        })?;
-        
+        let handlers = self
+            .handlers
+            .lock()
+            .map_err(|_| Error::Internal("Failed to lock handlers".into()))?;
+
         if !handlers.contains_key(&item.algorithm) {
             return Err(Error::InvalidInput(
-                format!("No handler registered for algorithm type {:?}", item.algorithm).into(),
+                format!(
+                    "No handler registered for algorithm type {:?}",
+                    item.algorithm
+                )
+                .into(),
             ));
         }
-        
+
         // Add the item to the work queue
-        let mut work_queue = self.work_queue.lock().map_err(|_| {
-            Error::Internal("Failed to lock work queue".into())
-        })?;
-        
+        let mut work_queue = self
+            .work_queue
+            .lock()
+            .map_err(|_| Error::Internal("Failed to lock work queue".into()))?;
+
         let sequence = work_queue.len();
-        
-        work_queue.push(PrioritizedWorkItem {
-            item,
-            sequence,
-        });
-        
+
+        work_queue.push(PrioritizedWorkItem { item, sequence });
+
         // Schedule processing
         self.schedule_processing()?;
-        
+
         Ok(())
     }
-    
+
     /// Schedules processing of work items.
     ///
     /// This will schedule as many work items as there are available threads.
@@ -204,49 +212,50 @@ impl WorkScheduler {
     /// `Ok(())` if processing was scheduled successfully, or an error if scheduling failed.
     fn schedule_processing(&self) -> Result<()> {
         // Get work items to process
-        let mut work_queue = self.work_queue.lock().map_err(|_| {
-            Error::Internal("Failed to lock work queue".into())
-        })?;
-        
+        let mut work_queue = self
+            .work_queue
+            .lock()
+            .map_err(|_| Error::Internal("Failed to lock work queue".into()))?;
+
         // If queue is empty, return early
         if work_queue.is_empty() {
             return Ok(());
         }
-        
+
         // Collect work items into a vector
         let items: Vec<_> = work_queue.drain().map(|p| p.item).collect();
         drop(work_queue); // Release lock
-        
+
         // Get a reference to the thread pool
         let thread_pool = Arc::clone(&self.thread_pool);
         let scheduler = Arc::new(self.clone());
-        
+
         // For each item, create a handler wrapper that captures just the item and algorithm type
         for item in items {
             // Create a safe wrapper that will execute the handler with the item
             let item_clone = item.clone();
             let algorithm_type = item.algorithm.clone();
-            
+
             // Create a wrapper that contains just the item and its algorithm type
             let handler_wrapper = Arc::new(HandlerWrapper {
                 item: item_clone,
                 algorithm_type,
             });
-            
+
             // Create a reference to the scheduler that can be moved to the thread
             let scheduler_clone = Arc::clone(&scheduler);
             let wrapper_clone = Arc::clone(&handler_wrapper);
-            
+
             // Schedule the task for execution
             thread_pool.execute(move || {
                 // Execute the handler with the item through the scheduler
                 let _ = wrapper_clone.execute(&scheduler_clone);
             })?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Waits for all scheduled work items to complete.
     ///
     /// # Returns
@@ -255,21 +264,22 @@ impl WorkScheduler {
     pub fn wait(&self) -> Result<()> {
         self.thread_pool.wait()
     }
-    
+
     /// Returns the number of queued work items.
     pub fn queued_items(&self) -> Result<usize> {
-        let work_queue = self.work_queue.lock().map_err(|_| {
-            Error::Internal("Failed to lock work queue".into())
-        })?;
-        
+        let work_queue = self
+            .work_queue
+            .lock()
+            .map_err(|_| Error::Internal("Failed to lock work queue".into()))?;
+
         Ok(work_queue.len())
     }
-    
+
     /// Returns the number of active work items.
     pub fn active_items(&self) -> usize {
         self.thread_pool.active_tasks()
     }
-    
+
     /// Splits a work item into smaller items for parallel processing.
     ///
     /// # Arguments
@@ -284,7 +294,7 @@ impl WorkScheduler {
         // Select a dimension to split along
         let mut best_dimension = 0;
         let mut max_size = 0;
-        
+
         for (i, _dim) in item.region.dimensions.iter().enumerate() {
             let range = item.region.end[i] - item.region.start[i];
             if range > max_size {
@@ -292,12 +302,13 @@ impl WorkScheduler {
                 best_dimension = i;
             }
         }
-        
+
         // Split the region
         let regions = item.region.split(best_dimension, count);
-        
+
         // Create work items for each region
-        regions.into_iter()
+        regions
+            .into_iter()
             .map(|region| WorkItem {
                 region,
                 algorithm: item.algorithm,
@@ -305,7 +316,7 @@ impl WorkScheduler {
             })
             .collect()
     }
-    
+
     /// Schedules a batch of work items for execution.
     ///
     /// # Arguments
@@ -317,37 +328,40 @@ impl WorkScheduler {
     /// `Ok(())` if the items were scheduled successfully, or an error if scheduling failed.
     pub fn schedule_batch(&self, items: Vec<WorkItem>) -> Result<()> {
         // Check if handlers exist for all algorithm types
-        let handlers = self.handlers.lock().map_err(|_| {
-            Error::Internal("Failed to lock handlers".into())
-        })?;
-        
+        let handlers = self
+            .handlers
+            .lock()
+            .map_err(|_| Error::Internal("Failed to lock handlers".into()))?;
+
         for item in &items {
             if !handlers.contains_key(&item.algorithm) {
                 return Err(Error::InvalidInput(
-                    format!("No handler registered for algorithm type {:?}", item.algorithm).into(),
+                    format!(
+                        "No handler registered for algorithm type {:?}",
+                        item.algorithm
+                    )
+                    .into(),
                 ));
             }
         }
-        
+
         // Add the items to the work queue
-        let mut work_queue = self.work_queue.lock().map_err(|_| {
-            Error::Internal("Failed to lock work queue".into())
-        })?;
-        
+        let mut work_queue = self
+            .work_queue
+            .lock()
+            .map_err(|_| Error::Internal("Failed to lock work queue".into()))?;
+
         let mut sequence = work_queue.len();
-        
+
         for item in items {
-            work_queue.push(PrioritizedWorkItem {
-                item,
-                sequence,
-            });
-            
+            work_queue.push(PrioritizedWorkItem { item, sequence });
+
             sequence += 1;
         }
-        
+
         // Schedule processing
         self.schedule_processing()?;
-        
+
         Ok(())
     }
 }
@@ -370,7 +384,7 @@ impl Clone for WorkScheduler {
             thread_pool: Arc::clone(&self.thread_pool),
             work_queue: Mutex::new(BinaryHeap::new()), // Create a new empty queue
             config: self.config.clone(),
-            handlers: Mutex::new(HashMap::new()),      // Create a new empty handlers map
+            handlers: Mutex::new(HashMap::new()), // Create a new empty handlers map
         }
     }
-} 
+}

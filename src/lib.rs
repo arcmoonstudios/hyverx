@@ -44,7 +44,7 @@ pub mod parallel;
 pub mod xypher_grid;
 pub mod prelude {
     //! Prelude module that re-exports commonly used types and functions.
-    
+
     pub use crate::algorithms::{
         AdaptiveReedSolomon, ConvolutionalCode, ErrorCorrectionAlgorithm, Ldpc, ReedSolomon,
         TensorReedSolomon, TurboCode,
@@ -52,20 +52,16 @@ pub mod prelude {
     pub use crate::config::{Config, HardwareTarget};
     pub use crate::error::{Error, Result};
     pub use crate::galois::GaloisField;
-    pub use crate::hardware::{
-        HardwareAccelerator, TensorOperation, HardwareCapabilities
-    };
-    pub use crate::hardware::AcceleratorType;
     pub use crate::hardware::cpu::CPUAccelerator;
     pub use crate::hardware::dgpu::GPUAccelerator;
     pub use crate::hardware::igpu::IGPUAccelerator;
+    pub use crate::hardware::AcceleratorType;
+    pub use crate::hardware::{HardwareAccelerator, HardwareCapabilities, TensorOperation};
     pub use crate::neural::{
-        ErrorAnalyzer, ErrorPattern, NeuralGaloisCorrector, PatternRecognizer
+        ErrorAnalyzer, ErrorPattern, NeuralGaloisCorrector, PatternRecognizer,
     };
-    pub use crate::parallel::{
-        AlgorithmAllocator, DimensionMapper, ThreadPool, WorkScheduler
-    };
-    pub use crate::xypher_grid::{XypherGrid, initialize_tables, get_xypher_grid};
+    pub use crate::parallel::{AlgorithmAllocator, DimensionMapper, ThreadPool, WorkScheduler};
+    pub use crate::xypher_grid::{get_xypher_grid, initialize_tables, XypherGrid};
     pub use crate::HyVerxSystem;
 }
 
@@ -174,21 +170,25 @@ impl HyVerxSystem {
     pub fn new(config: config::Config) -> Result<Self> {
         // Initialize Galois field
         let galois_field = Arc::new(galois::GaloisField::new(config.field_polynomial()));
-        
+
         // Initialize hardware accelerator
-        let hardware_accelerator = Self::create_hardware_accelerator(&config, Arc::clone(&galois_field))?;
-        
+        let hardware_accelerator =
+            Self::create_hardware_accelerator(&config, Arc::clone(&galois_field))?;
+
         // Initialize XypherGrid
         let xypher_grid = Arc::new(xypher_grid::XypherGrid::new());
         xypher_grid.initialize_precomputed_tables()?;
-        
+
         // Create thread pool and work scheduler
         let thread_pool = Arc::new(parallel::ThreadPool::new(parallel::ParallelConfig {
             thread_count: config.max_threads(),
             ..parallel::ParallelConfig::default()
         }));
-        let work_scheduler = Arc::new(parallel::WorkScheduler::new(thread_pool, parallel::ParallelConfig::default()));
-        
+        let work_scheduler = Arc::new(parallel::WorkScheduler::new(
+            thread_pool,
+            parallel::ParallelConfig::default(),
+        ));
+
         // Initialize algorithm allocator
         let mut algorithm_allocator = parallel::AlgorithmAllocator::new(work_scheduler);
         algorithm_allocator.with_algorithms(vec![
@@ -202,14 +202,14 @@ impl HyVerxSystem {
             algorithms::AlgorithmType::Convolutional,
             algorithms::AlgorithmType::Fountain,
         ]);
-        
+
         // Initialize error analyzer
         let error_analyzer = neural::ErrorAnalyzer::new(
             config.max_data_size(),
             config.dimensions(),
             Arc::clone(&hardware_accelerator),
         );
-        
+
         // Initialize statistics
         let stats = Statistics {
             encode_count: 0,
@@ -240,7 +240,7 @@ impl HyVerxSystem {
                 parallel_rs_count: 0,
             },
         };
-        
+
         Ok(Self {
             config,
             galois_field,
@@ -251,7 +251,7 @@ impl HyVerxSystem {
             stats,
         })
     }
-    
+
     /// Creates a hardware accelerator based on the configuration.
     fn create_hardware_accelerator(
         config: &config::Config,
@@ -264,7 +264,9 @@ impl HyVerxSystem {
                 if hardware::dgpu::GPUAccelerator::is_available() {
                     Ok(Arc::new(hardware::dgpu::GPUAccelerator::new(galois_field)?))
                 } else if hardware::igpu::IGPUAccelerator::is_available() {
-                    Ok(Arc::new(hardware::igpu::IGPUAccelerator::new(galois_field)?))
+                    Ok(Arc::new(hardware::igpu::IGPUAccelerator::new(
+                        galois_field,
+                    )?))
                 } else {
                     Ok(Arc::new(hardware::cpu::CPUAccelerator::new(galois_field)?))
                 }
@@ -276,38 +278,50 @@ impl HyVerxSystem {
                 if hardware::dgpu::GPUAccelerator::is_available() {
                     Ok(Arc::new(hardware::dgpu::GPUAccelerator::new(galois_field)?))
                 } else {
-                    Err(Error::HardwareUnavailable("CUDA is not available on this system".into()))
+                    Err(Error::HardwareUnavailable(
+                        "CUDA is not available on this system".into(),
+                    ))
                 }
             }
             config::HardwareTarget::OpenCL => {
                 if hardware::igpu::IGPUAccelerator::is_available() {
-                    Ok(Arc::new(hardware::igpu::IGPUAccelerator::new(galois_field)?))
+                    Ok(Arc::new(hardware::igpu::IGPUAccelerator::new(
+                        galois_field,
+                    )?))
                 } else {
-                    Err(Error::HardwareUnavailable("OpenCL is not available on this system".into()))
+                    Err(Error::HardwareUnavailable(
+                        "OpenCL is not available on this system".into(),
+                    ))
                 }
             }
             config::HardwareTarget::All => {
                 // Use a composite accelerator that combines all available hardware
                 let mut accelerators: Vec<Arc<dyn hardware::HardwareAccelerator>> = Vec::new();
-                
+
                 // Always add CPU accelerator
-                accelerators.push(Arc::new(hardware::cpu::CPUAccelerator::new(galois_field.clone())?));
-                
+                accelerators.push(Arc::new(hardware::cpu::CPUAccelerator::new(
+                    galois_field.clone(),
+                )?));
+
                 // Add CUDA accelerator if available
                 if hardware::dgpu::GPUAccelerator::is_available() {
-                    accelerators.push(Arc::new(hardware::dgpu::GPUAccelerator::new(galois_field.clone())?));
+                    accelerators.push(Arc::new(hardware::dgpu::GPUAccelerator::new(
+                        galois_field.clone(),
+                    )?));
                 }
-                
+
                 // Add OpenCL accelerator if available
                 if hardware::igpu::IGPUAccelerator::is_available() {
-                    accelerators.push(Arc::new(hardware::igpu::IGPUAccelerator::new(galois_field.clone())?));
+                    accelerators.push(Arc::new(hardware::igpu::IGPUAccelerator::new(
+                        galois_field.clone(),
+                    )?));
                 }
-                
+
                 Ok(Arc::new(hardware::CompositeAccelerator::new(accelerators)))
             }
         }
     }
-    
+
     /// Generates precomputed lookup tables for faster operations.
     ///
     /// # Returns
@@ -316,19 +330,19 @@ impl HyVerxSystem {
     pub fn generate_lookup_tables(&mut self) -> Result<()> {
         // Generate Galois field lookup tables
         self.galois_field.generate_lookup_tables()?;
-        
+
         // Create algorithm-specific lookup tables
         let table_path = self.config.table_path();
         if !table_path.exists() {
             std::fs::create_dir_all(table_path)?;
         }
-        
+
         // Generate Reed-Solomon lookup tables
         let rs_tables_path = table_path.join("reed_solomon");
         if !rs_tables_path.exists() {
             std::fs::create_dir_all(&rs_tables_path)?;
         }
-        
+
         // Generate polynomial tables
         let poly_path = rs_tables_path.join("polynomials");
         let algorithm = algorithms::create_algorithm(
@@ -337,17 +351,18 @@ impl HyVerxSystem {
             self.hardware_accelerator.clone(),
         )?;
         algorithm.generate_lookup_tables(&poly_path)?;
-        
+
         // Generate syndrome tables
         let syndrome_path = rs_tables_path.join("syndromes");
         algorithm.generate_lookup_tables(&syndrome_path)?;
-        
+
         // Generate hardware-specific lookup tables
-        self.hardware_accelerator.generate_lookup_tables(table_path)?;
-        
+        self.hardware_accelerator
+            .generate_lookup_tables(table_path)?;
+
         Ok(())
     }
-    
+
     /// Encodes data using the most appropriate algorithm and hardware acceleration.
     ///
     /// # Arguments
@@ -361,26 +376,26 @@ impl HyVerxSystem {
         // Select the most appropriate algorithm based on data characteristics
         let algorithm = self.algorithm_allocator.select_encoding_algorithm(
             data.len(),
-            0.01, // Default error rate
+            0.01,  // Default error rate
             false, // Assume no burst errors by default
         )?;
-        
+
         // Track statistics
         self.stats.encode_count += 1;
-        
+
         // Create the algorithm instance
         let algorithm = algorithms::create_algorithm(
             algorithm,
             self.galois_field.clone(),
             self.hardware_accelerator.clone(),
         )?;
-        
+
         // Encode the data using the selected algorithm
         let encoded = algorithm.encode(data)?;
-        
+
         Ok(encoded)
     }
-    
+
     /// Decodes data, detecting and correcting errors using the most appropriate algorithm.
     ///
     /// # Arguments
@@ -392,26 +407,25 @@ impl HyVerxSystem {
     /// Decoded data with errors corrected (without error correction symbols)
     pub fn decode(&mut self, data: &[u8]) -> Result<Vec<u8>> {
         // Calculate syndromes to detect errors
-        let syndromes = self.hardware_accelerator.calculate_syndromes(
-            data,
-            self.config.ecc_size(),
-        )?;
-        
+        let syndromes = self
+            .hardware_accelerator
+            .calculate_syndromes(data, self.config.ecc_size())?;
+
         // Check if there are any errors
         let has_errors = !syndromes.iter().all(|&s| s == 0);
-        
+
         // Track statistics
         self.stats.decode_count += 1;
         if has_errors {
             self.stats.errors_detected += 1;
         }
-        
+
         if !has_errors {
             // No errors, return the original data without ECC symbols
             let data_len = data.len() - self.config.ecc_size();
             return Ok(data[..data_len].to_vec());
         }
-        
+
         // Analyze error patterns
         let _error_pattern = self.error_analyzer.analyze_syndromes(
             &syndromes,
@@ -419,46 +433,47 @@ impl HyVerxSystem {
             self.config.ecc_size(),
             self.galois_field.field_size(),
         );
-        
+
         // Select the most appropriate algorithm based on error characteristics
         let algorithm = self.algorithm_allocator.select_decoding_algorithm(
             self.config.ecc_size(),
-            0.01, // Default error rate
-            false // Default to no burst errors
+            0.01,  // Default error rate
+            false, // Default to no burst errors
         )?; // Unwrap the Result
-        
+
         // Create the algorithm instance
         let algorithm_instance = algorithms::create_algorithm(
             algorithm,
             self.galois_field.clone(),
             self.hardware_accelerator.clone(),
         )?;
-        
+
         // Update statistics based on algorithm selection
         self.update_algorithm_stats(algorithm);
-        
+
         // Decode the data using the selected algorithm
         let start_time = std::time::Instant::now();
         let decoded = algorithm_instance.decode(data)?;
         let elapsed = start_time.elapsed();
-        
+
         // Update timing statistics
         self.stats.hardware_usage.total_time_ms += elapsed.as_secs_f64() * 1000.0;
-        
+
         // Check if error correction was successful
         let success = self.verify_correction(&decoded);
         if success {
             self.stats.errors_corrected += 1;
         }
-        
+
         // Update success rate
         if self.stats.errors_detected > 0 {
-            self.stats.success_rate = self.stats.errors_corrected as f64 / self.stats.errors_detected as f64;
+            self.stats.success_rate =
+                self.stats.errors_corrected as f64 / self.stats.errors_detected as f64;
         }
-        
+
         Ok(decoded)
     }
-    
+
     /// Processes data by encoding it with error correction, then simulating decoding.
     ///
     /// This is primarily for testing and benchmarking purposes.
@@ -473,27 +488,35 @@ impl HyVerxSystem {
     pub fn process_data(&mut self, data: &[u8]) -> Result<Vec<u8>> {
         // Encode the data
         let encoded = self.encode(data)?;
-        
+
         // In a real application, the encoded data would be transmitted or stored
         // and potentially corrupted. For this test, we'll decode it directly.
         let decoded = self.decode(&encoded)?;
-        
+
         Ok(decoded)
     }
-    
+
     /// Updates algorithm allocation statistics.
     fn update_algorithm_stats(&mut self, algorithm_type: algorithms::AlgorithmType) {
         match algorithm_type {
-            algorithms::AlgorithmType::ReedSolomon => self.stats.algorithm_allocation.reed_solomon_count += 1,
+            algorithms::AlgorithmType::ReedSolomon => {
+                self.stats.algorithm_allocation.reed_solomon_count += 1
+            }
             algorithms::AlgorithmType::Ldpc => self.stats.algorithm_allocation.ldpc_count += 1,
             algorithms::AlgorithmType::Turbo => self.stats.algorithm_allocation.turbo_count += 1,
-            algorithms::AlgorithmType::Convolutional => self.stats.algorithm_allocation.convolutional_count += 1,
-            algorithms::AlgorithmType::TensorReedSolomon => self.stats.algorithm_allocation.tensor_rs_count += 1,
-            algorithms::AlgorithmType::AdaptiveReedSolomon => self.stats.algorithm_allocation.adaptive_rs_count += 1,
+            algorithms::AlgorithmType::Convolutional => {
+                self.stats.algorithm_allocation.convolutional_count += 1
+            }
+            algorithms::AlgorithmType::TensorReedSolomon => {
+                self.stats.algorithm_allocation.tensor_rs_count += 1
+            }
+            algorithms::AlgorithmType::AdaptiveReedSolomon => {
+                self.stats.algorithm_allocation.adaptive_rs_count += 1
+            }
             _ => (),
         }
     }
-    
+
     /// Verifies the correction of decoded data by re-encoding and checking syndromes.
     fn verify_correction(&self, decoded: &[u8]) -> bool {
         // Re-encode the decoded data
@@ -503,14 +526,17 @@ impl HyVerxSystem {
             decoded.len(),                          // message_length
             self.hardware_accelerator.clone(),
         );
-        
+
         match rs_result {
             Ok(rs) => {
                 let algorithm: &dyn algorithms::ErrorCorrectionAlgorithm = &rs;
                 match algorithm.encode(decoded) {
                     Ok(reencoded) => {
                         // Calculate syndromes for the re-encoded data
-                        match self.hardware_accelerator.calculate_syndromes(&reencoded, self.config.ecc_size()) {
+                        match self
+                            .hardware_accelerator
+                            .calculate_syndromes(&reencoded, self.config.ecc_size())
+                        {
                             Ok(syndromes) => {
                                 // All syndromes should be zero if correction was successful
                                 syndromes.iter().all(|&s| s == 0)
@@ -524,22 +550,22 @@ impl HyVerxSystem {
             Err(_) => false,
         }
     }
-    
+
     /// Returns the current statistics for the HyVERX system.
     pub fn get_statistics(&self) -> Statistics {
         self.stats.clone()
     }
-    
+
     /// Returns the Galois field used by the system.
     pub fn galois_field(&self) -> Arc<galois::GaloisField> {
         self.galois_field.clone()
     }
-    
+
     /// Returns the hardware accelerator used by the system.
     pub fn hardware_accelerator(&self) -> Arc<dyn hardware::HardwareAccelerator> {
         self.hardware_accelerator.clone()
     }
-    
+
     /// Returns the configuration of the system.
     pub fn config(&self) -> &config::Config {
         &self.config

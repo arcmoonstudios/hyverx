@@ -18,9 +18,9 @@
 //! * **Tensor Operations**: Specialized implementations for neural network computation
 //! * **ECC Operations**: Galois field arithmetic for error correction codes
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
-use std::collections::HashMap;
 
 pub mod cpu;
 pub mod dgpu;
@@ -193,13 +193,13 @@ pub enum ElementWiseOp {
 pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     /// Returns the type of hardware accelerator.
     fn accelerator_type(&self) -> AcceleratorType;
-    
+
     /// Returns whether this accelerator is available on the current system.
     fn is_available(&self) -> bool;
-    
+
     /// Returns hardware capabilities of this accelerator.
     fn capabilities(&self) -> HardwareCapabilities;
-    
+
     /// Generates lookup tables for faster operations.
     ///
     /// # Arguments
@@ -210,7 +210,7 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     ///
     /// Result indicating success or containing an error
     fn generate_lookup_tables(&self, path: &Path) -> Result<()>;
-    
+
     /// Calculate syndromes for error detection.
     ///
     /// # Arguments
@@ -222,7 +222,7 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     ///
     /// Vector of calculated syndromes or an error
     fn calculate_syndromes(&self, data: &[u8], syndrome_count: usize) -> Result<Vec<u16>>;
-    
+
     /// Multiply two arrays of field elements element-wise.
     ///
     /// # Arguments
@@ -234,7 +234,7 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     ///
     /// Result array with element-wise multiplication or an error
     fn multiply_vec(&self, a: &[u16], b: &[u16]) -> Result<Vec<u16>>;
-    
+
     /// Add two arrays of field elements element-wise.
     ///
     /// # Arguments
@@ -246,7 +246,7 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     ///
     /// Result array with element-wise addition or an error
     fn add_vec(&self, a: &[u16], b: &[u16]) -> Result<Vec<u16>>;
-    
+
     /// Evaluate multiple polynomials at multiple points.
     ///
     /// # Arguments
@@ -258,7 +258,7 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     ///
     /// Matrix of evaluation results or an error
     fn polynomial_eval_batch(&self, polys: &[Vec<u16>], points: &[u16]) -> Result<Vec<Vec<u16>>>;
-    
+
     /// Perform tensor operations for neural-symbolic integration.
     ///
     /// # Arguments
@@ -269,18 +269,18 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     ///
     /// Result indicating success or containing an error
     fn perform_tensor_operation(&self, op: TensorOperation) -> Result<()>;
-    
+
     /// Returns the underlying Galois field.
     fn galois_field(&self) -> Arc<GaloisField>;
-    
+
     /// Returns hardware-specific statistics.
     fn get_statistics(&self) -> HardwareStatistics;
-    
+
     /// Checks if the accelerator supports Hamming code operations.
     fn supports_hamming(&self) -> bool {
         false
     }
-    
+
     /// Encodes data using Hamming code with hardware acceleration.
     ///
     /// # Arguments
@@ -292,9 +292,11 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     ///
     /// Encoded data or an error
     fn hamming_encode(&self, _data: &[u8], _parity_bits: usize) -> Result<Vec<u8>> {
-        Err(Error::UnsupportedOperation("Hamming encode not supported by this accelerator".into()))
+        Err(Error::UnsupportedOperation(
+            "Hamming encode not supported by this accelerator".into(),
+        ))
     }
-    
+
     /// Decodes data using Hamming code with hardware acceleration.
     ///
     /// # Arguments
@@ -306,14 +308,16 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     ///
     /// Decoded data or an error
     fn hamming_decode(&self, _data: &[u8], _parity_bits: usize) -> Result<Vec<u8>> {
-        Err(Error::UnsupportedOperation("Hamming decode not supported by this accelerator".into()))
+        Err(Error::UnsupportedOperation(
+            "Hamming decode not supported by this accelerator".into(),
+        ))
     }
-    
+
     /// Checks if the accelerator supports BCH code operations.
     fn supports_bch(&self) -> bool {
         false
     }
-    
+
     /// Encodes data using BCH code with hardware acceleration.
     ///
     /// # Arguments
@@ -326,9 +330,11 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     ///
     /// Encoded data or an error
     fn bch_encode(&self, _data: &[u8], _t: usize, _m: usize) -> Result<Vec<u8>> {
-        Err(Error::UnsupportedOperation("BCH encode not supported by this accelerator".into()))
+        Err(Error::UnsupportedOperation(
+            "BCH encode not supported by this accelerator".into(),
+        ))
     }
-    
+
     /// Decodes data using BCH code with hardware acceleration.
     ///
     /// # Arguments
@@ -341,14 +347,16 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     ///
     /// Decoded data or an error
     fn bch_decode(&self, _data: &[u8], _t: usize, _m: usize) -> Result<Vec<u8>> {
-        Err(Error::UnsupportedOperation("BCH decode not supported by this accelerator".into()))
+        Err(Error::UnsupportedOperation(
+            "BCH decode not supported by this accelerator".into(),
+        ))
     }
-    
+
     /// Checks if the accelerator supports Reed-Muller code operations.
     fn supports_reed_muller(&self) -> bool {
         false
     }
-    
+
     /// Encodes data using Reed-Muller code with hardware acceleration.
     ///
     /// # Arguments
@@ -361,9 +369,11 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     ///
     /// Encoded data or an error
     fn reed_muller_encode(&self, _data: &[u8], _r: usize, _m: usize) -> Result<Vec<u8>> {
-        Err(Error::UnsupportedOperation("Reed-Muller encode not supported by this accelerator".into()))
+        Err(Error::UnsupportedOperation(
+            "Reed-Muller encode not supported by this accelerator".into(),
+        ))
     }
-    
+
     /// Decodes data using Reed-Muller code with hardware acceleration.
     ///
     /// # Arguments
@@ -376,14 +386,16 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     ///
     /// Decoded data or an error
     fn reed_muller_decode(&self, _data: &[u8], _r: usize, _m: usize) -> Result<Vec<u8>> {
-        Err(Error::UnsupportedOperation("Reed-Muller decode not supported by this accelerator".into()))
+        Err(Error::UnsupportedOperation(
+            "Reed-Muller decode not supported by this accelerator".into(),
+        ))
     }
-    
+
     /// Checks if the accelerator supports Turbo code operations.
     fn supports_turbo(&self) -> bool {
         false
     }
-    
+
     /// Encodes data using Turbo code with hardware acceleration.
     ///
     /// # Arguments
@@ -395,10 +407,17 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     /// # Returns
     ///
     /// Encoded data or an error
-    fn turbo_encode(&self, _data: &[u8], _constraint_length: usize, _code_rate: usize) -> Result<Vec<u8>> {
-        Err(Error::UnsupportedOperation("Turbo encode not supported by this accelerator".into()))
+    fn turbo_encode(
+        &self,
+        _data: &[u8],
+        _constraint_length: usize,
+        _code_rate: usize,
+    ) -> Result<Vec<u8>> {
+        Err(Error::UnsupportedOperation(
+            "Turbo encode not supported by this accelerator".into(),
+        ))
     }
-    
+
     /// Decodes data using Turbo code with hardware acceleration.
     ///
     /// # Arguments
@@ -411,15 +430,23 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     /// # Returns
     ///
     /// Decoded data or an error
-    fn turbo_decode(&self, _data: &[u8], _constraint_length: usize, _code_rate: usize, _iterations: usize) -> Result<Vec<u8>> {
-        Err(Error::UnsupportedOperation("Turbo decode not supported by this accelerator".into()))
+    fn turbo_decode(
+        &self,
+        _data: &[u8],
+        _constraint_length: usize,
+        _code_rate: usize,
+        _iterations: usize,
+    ) -> Result<Vec<u8>> {
+        Err(Error::UnsupportedOperation(
+            "Turbo decode not supported by this accelerator".into(),
+        ))
     }
-    
+
     /// Checks if the accelerator supports Convolutional code operations.
     fn supports_convolutional(&self) -> bool {
         false
     }
-    
+
     /// Encodes data using Convolutional code with hardware acceleration.
     ///
     /// # Arguments
@@ -431,10 +458,17 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     /// # Returns
     ///
     /// Encoded data or an error
-    fn convolutional_encode(&self, _data: &[u8], _constraint_length: usize, _generator_polynomials: &[u64]) -> Result<Vec<u8>> {
-        Err(Error::UnsupportedOperation("Convolutional encode not supported by this accelerator".into()))
+    fn convolutional_encode(
+        &self,
+        _data: &[u8],
+        _constraint_length: usize,
+        _generator_polynomials: &[u64],
+    ) -> Result<Vec<u8>> {
+        Err(Error::UnsupportedOperation(
+            "Convolutional encode not supported by this accelerator".into(),
+        ))
     }
-    
+
     /// Decodes data using Convolutional code with hardware acceleration.
     ///
     /// # Arguments
@@ -446,15 +480,22 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     /// # Returns
     ///
     /// Decoded data or an error
-    fn convolutional_decode(&self, _data: &[u8], _constraint_length: usize, _generator_polynomials: &[u64]) -> Result<Vec<u8>> {
-        Err(Error::UnsupportedOperation("Convolutional decode not supported by this accelerator".into()))
+    fn convolutional_decode(
+        &self,
+        _data: &[u8],
+        _constraint_length: usize,
+        _generator_polynomials: &[u64],
+    ) -> Result<Vec<u8>> {
+        Err(Error::UnsupportedOperation(
+            "Convolutional decode not supported by this accelerator".into(),
+        ))
     }
-    
+
     /// Checks if the accelerator supports Fountain code operations.
     fn supports_fountain(&self) -> bool {
         false
     }
-    
+
     /// Encodes data using Fountain code with hardware acceleration.
     ///
     /// # Arguments
@@ -466,10 +507,17 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     /// # Returns
     ///
     /// Encoded data or an error
-    fn fountain_encode(&self, _data: &[u8], _source_symbols: usize, _symbol_size: usize) -> Result<Vec<u8>> {
-        Err(Error::UnsupportedOperation("Fountain encode not supported by this accelerator".into()))
+    fn fountain_encode(
+        &self,
+        _data: &[u8],
+        _source_symbols: usize,
+        _symbol_size: usize,
+    ) -> Result<Vec<u8>> {
+        Err(Error::UnsupportedOperation(
+            "Fountain encode not supported by this accelerator".into(),
+        ))
     }
-    
+
     /// Decodes data using Fountain code with hardware acceleration.
     ///
     /// # Arguments
@@ -481,15 +529,22 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     /// # Returns
     ///
     /// Decoded data or an error
-    fn fountain_decode(&self, _data: &[u8], _source_symbols: usize, _symbol_size: usize) -> Result<Vec<u8>> {
-        Err(Error::UnsupportedOperation("Fountain decode not supported by this accelerator".into()))
+    fn fountain_decode(
+        &self,
+        _data: &[u8],
+        _source_symbols: usize,
+        _symbol_size: usize,
+    ) -> Result<Vec<u8>> {
+        Err(Error::UnsupportedOperation(
+            "Fountain decode not supported by this accelerator".into(),
+        ))
     }
-    
+
     /// Returns whether the accelerator supports XypherGrid operations.
     fn supports_xypher_grid(&self) -> bool {
         false
     }
-    
+
     /// Initialize XypherGrid tables using this accelerator
     ///
     /// # Arguments
@@ -500,9 +555,11 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     ///
     /// Result indicating success or containing an error
     fn initialize_xypher_grid(&self, _xypher_grid: &XypherGrid) -> Result<()> {
-        Err(Error::UnsupportedOperation("XypherGrid initialization not supported by this accelerator".into()))
+        Err(Error::UnsupportedOperation(
+            "XypherGrid initialization not supported by this accelerator".into(),
+        ))
     }
-    
+
     /// Use XypherGrid tables to accelerate encoding operations
     ///
     /// # Arguments
@@ -514,10 +571,17 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     /// # Returns
     ///
     /// Encoded data or an error
-    fn xypher_grid_encode(&self, _data: &[u8], _algorithm: &str, _params: &[usize]) -> Result<Vec<u8>> {
-        Err(Error::UnsupportedOperation("XypherGrid encoding not supported by this accelerator".into()))
+    fn xypher_grid_encode(
+        &self,
+        _data: &[u8],
+        _algorithm: &str,
+        _params: &[usize],
+    ) -> Result<Vec<u8>> {
+        Err(Error::UnsupportedOperation(
+            "XypherGrid encoding not supported by this accelerator".into(),
+        ))
     }
-    
+
     /// Use XypherGrid tables to accelerate decoding operations
     ///
     /// # Arguments
@@ -529,8 +593,15 @@ pub trait HardwareAccelerator: std::fmt::Debug + Send + Sync {
     /// # Returns
     ///
     /// Decoded data or an error
-    fn xypher_grid_decode(&self, _data: &[u8], _algorithm: &str, _params: &[usize]) -> Result<Vec<u8>> {
-        Err(Error::UnsupportedOperation("XypherGrid decoding not supported by this accelerator".into()))
+    fn xypher_grid_decode(
+        &self,
+        _data: &[u8],
+        _algorithm: &str,
+        _params: &[usize],
+    ) -> Result<Vec<u8>> {
+        Err(Error::UnsupportedOperation(
+            "XypherGrid decoding not supported by this accelerator".into(),
+        ))
     }
 }
 
@@ -570,10 +641,10 @@ impl CompositeAccelerator {
         if accelerators.is_empty() {
             panic!("Composite accelerator requires at least one hardware accelerator");
         }
-        
+
         // Use the first accelerator's Galois field
         let galois_field = accelerators[0].galois_field();
-        
+
         Self {
             accelerators,
             galois_field,
@@ -581,7 +652,7 @@ impl CompositeAccelerator {
             decision_cache: RwLock::new(HashMap::new()),
         }
     }
-    
+
     /// Selects the optimal accelerator for a given operation based on heuristics.
     ///
     /// This method employs a sophisticated decision-making algorithm to select
@@ -619,22 +690,22 @@ impl CompositeAccelerator {
                 }
             }
         }
-        
+
         // Categorize operation characteristics
         let compute_bound = complexity > 1.5;
         let memory_bound = data_size > 1_000_000;
         let parallel_friendly = data_size > 1000;
-        
+
         // Score each accelerator based on operation characteristics
         let mut scores = Vec::with_capacity(self.accelerators.len());
-        
+
         for accelerator in &self.accelerators {
             let caps = accelerator.capabilities();
             let acc_type = accelerator.accelerator_type();
-            
+
             // Base score starts at 1.0
             let mut score = 1.0;
-            
+
             // Consider accelerator type
             match acc_type {
                 // CUDA excels at compute-bound, parallel-friendly operations
@@ -644,7 +715,7 @@ impl CompositeAccelerator {
                         score *= 1.5; // CUDA especially good for large datasets
                     }
                 }
-                
+
                 // OpenCL is versatile but particularly good for medium workloads
                 AcceleratorType::OpenCL if parallel_friendly => {
                     score *= 1.5;
@@ -652,7 +723,7 @@ impl CompositeAccelerator {
                         score *= 1.2; // OpenCL handles memory-bound ops well
                     }
                 }
-                
+
                 // CPU with AVX2 is good for smaller workloads and specific operations
                 AcceleratorType::Cpu if caps.avx2_available => {
                     if !memory_bound && compute_bound {
@@ -662,19 +733,19 @@ impl CompositeAccelerator {
                         score *= 1.5; // CPU often better for small datasets (less overhead)
                     }
                 }
-                
+
                 // Default adjustments based on accelerator type
                 AcceleratorType::Cuda => score *= 1.3,
                 AcceleratorType::OpenCL => score *= 1.1,
                 AcceleratorType::Cpu => score *= 1.0,
                 AcceleratorType::Composite => score *= 0.5, // Avoid recursive composites
             }
-            
+
             // Consider available memory
             if memory_bound && caps.available_memory < data_size * 4 {
                 score *= 0.5; // Penalize if memory might be insufficient
             }
-            
+
             // Consider operation specific capabilities
             if operation_type.contains("galois") && acc_type == AcceleratorType::Cuda {
                 score *= 1.2; // CUDA optimized for Galois field operations
@@ -685,21 +756,23 @@ impl CompositeAccelerator {
             if operation_type.contains("neural") && acc_type == AcceleratorType::Cuda {
                 score *= 1.3; // CUDA excellent for neural network ops
             }
-            
+
             scores.push((score, accelerator));
         }
-        
+
         // Select accelerator with highest score
         scores.sort_by(|(a_score, _), (b_score, _)| b_score.partial_cmp(a_score).unwrap());
-        let best_idx = self.accelerators.iter().position(|a| 
-            Arc::ptr_eq(a, &scores[0].1)
-        ).unwrap_or(0);
-        
+        let best_idx = self
+            .accelerators
+            .iter()
+            .position(|a| Arc::ptr_eq(a, &scores[0].1))
+            .unwrap_or(0);
+
         // Cache the decision
         {
             let mut cache = self.decision_cache.write().unwrap();
             cache.insert(cache_key, best_idx);
-            
+
             // Prune cache if it grows too large
             if cache.len() > 100 {
                 // Remove random entries to avoid pattern-based performance degradation
@@ -709,7 +782,7 @@ impl CompositeAccelerator {
                 }
             }
         }
-        
+
         Arc::clone(&self.accelerators[best_idx])
     }
 }
@@ -741,7 +814,7 @@ impl HardwareAccelerator for CompositeAccelerator {
             convolutional_available: false,
             fountain_available: false,
         };
-        
+
         // Combine capabilities from all accelerators
         for acc in &self.accelerators {
             let acc_caps = acc.capabilities();
@@ -760,7 +833,7 @@ impl HardwareAccelerator for CompositeAccelerator {
             caps.convolutional_available |= acc_caps.convolutional_available;
             caps.fountain_available |= acc_caps.fountain_available;
         }
-        
+
         caps
     }
 
@@ -768,38 +841,39 @@ impl HardwareAccelerator for CompositeAccelerator {
         // Create the composite-specific tables directory
         let composite_path = path.join("composite");
         std::fs::create_dir_all(&composite_path)?;
-        
+
         // Generate lookup tables for all accelerators
         for (i, acc) in self.accelerators.iter().enumerate() {
             let acc_path = composite_path.join(format!("acc_{}", i));
             if let Err(e) = acc.generate_lookup_tables(&acc_path) {
                 // Log error but continue with other accelerators
-                tracing::warn!("Failed to generate lookup tables for accelerator {}: {}", i, e);
+                tracing::warn!(
+                    "Failed to generate lookup tables for accelerator {}: {}",
+                    i,
+                    e
+                );
             }
         }
-        
+
         // Generate Galois field lookup tables
         self.galois_field().generate_lookup_tables()?;
-        
+
         Ok(())
     }
 
     fn calculate_syndromes(&self, data: &[u8], syndrome_count: usize) -> Result<Vec<u16>> {
         // Select optimal accelerator for syndrome calculation
-        let accelerator = self.select_optimal_accelerator(
-            "galois_syndromes",
-            data.len() + syndrome_count,
-            1.2
-        );
-        
+        let accelerator =
+            self.select_optimal_accelerator("galois_syndromes", data.len() + syndrome_count, 1.2);
+
         // Delegate operation
         let result = accelerator.calculate_syndromes(data, syndrome_count);
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.sync_operations += 1;
-            
+
             // Update accelerator-specific stats based on the type used
             match accelerator.accelerator_type() {
                 AcceleratorType::Cpu => stats.cpu_operations += 1,
@@ -808,30 +882,28 @@ impl HardwareAccelerator for CompositeAccelerator {
                 _ => {}
             }
         }
-        
+
         result
     }
 
     fn multiply_vec(&self, a: &[u16], b: &[u16]) -> Result<Vec<u16>> {
         if a.len() != b.len() {
-            return Err(Error::InvalidInput("Input arrays must have the same length".into()));
+            return Err(Error::InvalidInput(
+                "Input arrays must have the same length".into(),
+            ));
         }
-        
+
         // Select optimal accelerator for Galois field multiplication
-        let accelerator = self.select_optimal_accelerator(
-            "galois_multiply",
-            a.len(),
-            1.0
-        );
-        
+        let accelerator = self.select_optimal_accelerator("galois_multiply", a.len(), 1.0);
+
         // Delegate operation
         let result = accelerator.multiply_vec(a, b);
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.sync_operations += 1;
-            
+
             // Update accelerator-specific stats based on the type used
             match accelerator.accelerator_type() {
                 AcceleratorType::Cpu => stats.cpu_operations += 1,
@@ -840,30 +912,32 @@ impl HardwareAccelerator for CompositeAccelerator {
                 _ => {}
             }
         }
-        
+
         result
     }
 
     fn add_vec(&self, a: &[u16], b: &[u16]) -> Result<Vec<u16>> {
         if a.len() != b.len() {
-            return Err(Error::InvalidInput("Input arrays must have the same length".into()));
+            return Err(Error::InvalidInput(
+                "Input arrays must have the same length".into(),
+            ));
         }
-        
+
         // Select optimal accelerator for Galois field addition
         let accelerator = self.select_optimal_accelerator(
             "galois_add",
             a.len(),
-            0.8 // Addition is less compute intensive than multiplication
+            0.8, // Addition is less compute intensive than multiplication
         );
-        
+
         // Delegate operation
         let result = accelerator.add_vec(a, b);
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.sync_operations += 1;
-            
+
             // Update accelerator-specific stats based on the type used
             match accelerator.accelerator_type() {
                 AcceleratorType::Cpu => stats.cpu_operations += 1,
@@ -872,32 +946,28 @@ impl HardwareAccelerator for CompositeAccelerator {
                 _ => {}
             }
         }
-        
+
         result
     }
 
     fn polynomial_eval_batch(&self, polys: &[Vec<u16>], points: &[u16]) -> Result<Vec<Vec<u16>>> {
         // Calculate total data size
         let data_size = polys.iter().map(|p| p.len()).sum::<usize>() + points.len();
-        
+
         // Polynomial evaluation is computationally intensive
         let complexity = 1.8;
-        
+
         // Select optimal accelerator for polynomial evaluation
-        let accelerator = self.select_optimal_accelerator(
-            "polynomial_eval",
-            data_size,
-            complexity
-        );
-        
+        let accelerator = self.select_optimal_accelerator("polynomial_eval", data_size, complexity);
+
         // Delegate operation
         let result = accelerator.polynomial_eval_batch(polys, points);
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.sync_operations += 1;
-            
+
             // Update accelerator-specific stats based on the type used
             match accelerator.accelerator_type() {
                 AcceleratorType::Cpu => stats.cpu_operations += 1,
@@ -906,7 +976,7 @@ impl HardwareAccelerator for CompositeAccelerator {
                 _ => {}
             }
         }
-        
+
         result
     }
 
@@ -915,47 +985,56 @@ impl HardwareAccelerator for CompositeAccelerator {
         let (data_size, operation_type, complexity) = match &op {
             TensorOperation::MatrixMultiply { a, b, c: _, dims } => {
                 let (m, _k, n) = *dims;
-                
+
                 // Matrix multiplication is O(m*n*k) complexity
                 let size = a.len() + b.len() + (m * n);
                 let complexity = 2.0; // Matrix multiplication is compute-intensive
-                
+
                 (size, "matrix_multiply", complexity)
             }
-            TensorOperation::ElementWise { input, output: _, op: _ } => {
+            TensorOperation::ElementWise {
+                input,
+                output: _,
+                op: _,
+            } => {
                 let size = input.len() * 2;
                 let complexity = 0.9; // Element-wise operations are relatively simple
-                
+
                 (size, "element_wise", complexity)
             }
-            TensorOperation::Convolution { input, kernel, output: _, input_dims, kernel_dims, stride: _, padding: _ } => {
+            TensorOperation::Convolution {
+                input,
+                kernel,
+                output: _,
+                input_dims,
+                kernel_dims,
+                stride: _,
+                padding: _,
+            } => {
                 let (batch_size, input_height, input_width, _input_channels) = *input_dims;
                 let (_kernel_height, _kernel_width, _, output_channels) = *kernel_dims;
-                
+
                 // Convolution is highly compute-intensive
-                let size = input.len() + kernel.len() + 
-                           (batch_size * input_height * input_width * output_channels);
+                let size = input.len()
+                    + kernel.len()
+                    + (batch_size * input_height * input_width * output_channels);
                 let complexity = 2.2; // Convolutions are very compute-intensive
-                
+
                 (size, "convolution", complexity)
             }
         };
-        
+
         // Select optimal accelerator
-        let accelerator = self.select_optimal_accelerator(
-            operation_type,
-            data_size,
-            complexity
-        );
-        
+        let accelerator = self.select_optimal_accelerator(operation_type, data_size, complexity);
+
         // Delegate operation
         let result = accelerator.perform_tensor_operation(op);
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().unwrap();
             stats.sync_operations += 1;
-            
+
             // Update accelerator-specific stats based on the type used
             match accelerator.accelerator_type() {
                 AcceleratorType::Cpu => stats.cpu_operations += 1,
@@ -964,7 +1043,7 @@ impl HardwareAccelerator for CompositeAccelerator {
                 _ => {}
             }
         }
-        
+
         result
     }
 
@@ -975,7 +1054,7 @@ impl HardwareAccelerator for CompositeAccelerator {
     fn get_statistics(&self) -> HardwareStatistics {
         // Combine base statistics with those from all accelerators
         let mut stats = self.stats.read().unwrap().clone();
-        
+
         for acc in &self.accelerators {
             let acc_stats = acc.get_statistics();
             stats.sync_operations += acc_stats.sync_operations;
@@ -986,16 +1065,16 @@ impl HardwareAccelerator for CompositeAccelerator {
             stats.avx2_operations += acc_stats.avx2_operations;
             stats.total_time_ms += acc_stats.total_time_ms;
         }
-        
+
         stats
     }
-    
+
     // Override methods for specific error correction codes by delegating to a suitable accelerator
-    
+
     fn supports_hamming(&self) -> bool {
         self.accelerators.iter().any(|acc| acc.supports_hamming())
     }
-    
+
     fn hamming_encode(&self, data: &[u8], parity_bits: usize) -> Result<Vec<u8>> {
         // Find an accelerator that supports Hamming encoding
         for acc in &self.accelerators {
@@ -1003,10 +1082,12 @@ impl HardwareAccelerator for CompositeAccelerator {
                 return acc.hamming_encode(data, parity_bits);
             }
         }
-        
-        Err(Error::UnsupportedOperation("No accelerator supports Hamming encode".into()))
+
+        Err(Error::UnsupportedOperation(
+            "No accelerator supports Hamming encode".into(),
+        ))
     }
-    
+
     fn hamming_decode(&self, data: &[u8], parity_bits: usize) -> Result<Vec<u8>> {
         // Find an accelerator that supports Hamming decoding
         for acc in &self.accelerators {
@@ -1014,14 +1095,16 @@ impl HardwareAccelerator for CompositeAccelerator {
                 return acc.hamming_decode(data, parity_bits);
             }
         }
-        
-        Err(Error::UnsupportedOperation("No accelerator supports Hamming decode".into()))
+
+        Err(Error::UnsupportedOperation(
+            "No accelerator supports Hamming decode".into(),
+        ))
     }
-    
+
     fn supports_bch(&self) -> bool {
         self.accelerators.iter().any(|acc| acc.supports_bch())
     }
-    
+
     fn bch_encode(&self, data: &[u8], t: usize, m: usize) -> Result<Vec<u8>> {
         // Find an accelerator that supports BCH encoding
         for acc in &self.accelerators {
@@ -1029,10 +1112,12 @@ impl HardwareAccelerator for CompositeAccelerator {
                 return acc.bch_encode(data, t, m);
             }
         }
-        
-        Err(Error::UnsupportedOperation("No accelerator supports BCH encode".into()))
+
+        Err(Error::UnsupportedOperation(
+            "No accelerator supports BCH encode".into(),
+        ))
     }
-    
+
     fn bch_decode(&self, data: &[u8], t: usize, m: usize) -> Result<Vec<u8>> {
         // Find an accelerator that supports BCH decoding
         for acc in &self.accelerators {
@@ -1040,14 +1125,18 @@ impl HardwareAccelerator for CompositeAccelerator {
                 return acc.bch_decode(data, t, m);
             }
         }
-        
-        Err(Error::UnsupportedOperation("No accelerator supports BCH decode".into()))
+
+        Err(Error::UnsupportedOperation(
+            "No accelerator supports BCH decode".into(),
+        ))
     }
-    
+
     fn supports_xypher_grid(&self) -> bool {
-        self.accelerators.iter().any(|acc| acc.supports_xypher_grid())
+        self.accelerators
+            .iter()
+            .any(|acc| acc.supports_xypher_grid())
     }
-    
+
     fn initialize_xypher_grid(&self, xypher_grid: &XypherGrid) -> Result<()> {
         // Find an accelerator that supports XypherGrid initialization
         for acc in &self.accelerators {
@@ -1055,8 +1144,10 @@ impl HardwareAccelerator for CompositeAccelerator {
                 return acc.initialize_xypher_grid(xypher_grid);
             }
         }
-        
-        Err(Error::UnsupportedOperation("No accelerator supports XypherGrid initialization".into()))
+
+        Err(Error::UnsupportedOperation(
+            "No accelerator supports XypherGrid initialization".into(),
+        ))
     }
 }
 
@@ -1091,43 +1182,45 @@ impl HardwareAccelerationManager {
         // Create tables path directory if it doesn't exist
         let tables_path = tables_path.as_ref().to_path_buf();
         std::fs::create_dir_all(&tables_path)?;
-        
+
         // Initialize hardware accelerators
         let mut accelerators = Vec::new();
-        
+
         // Register CPU accelerators
         if let Err(e) = register_cpu_accelerators(&mut accelerators) {
             tracing::warn!("Failed to register CPU accelerators: {}", e);
         }
-        
+
         // Register CUDA accelerators
         if let Err(e) = register_cuda_accelerators(&mut accelerators) {
             tracing::warn!("Failed to register CUDA accelerators: {}", e);
         }
-        
+
         // Register OpenCL accelerators
         if let Err(e) = register_opencl_accelerators(&mut accelerators) {
             tracing::warn!("Failed to register OpenCL accelerators: {}", e);
         }
-        
+
         // Ensure we have at least one accelerator
         if accelerators.is_empty() {
-            return Err(Error::HardwareUnavailable("No hardware accelerators available".into()));
+            return Err(Error::HardwareUnavailable(
+                "No hardware accelerators available".into(),
+            ));
         }
-        
+
         // Create composite accelerator
         let composite_accelerator = Arc::new(CompositeAccelerator::new(accelerators.clone()));
-        
+
         // Register composite accelerator
         accelerators.push(composite_accelerator.clone());
-        
+
         Ok(Self {
             accelerators,
             composite_accelerator,
             tables_path,
         })
     }
-    
+
     /// Returns a reference to the composite accelerator.
     ///
     /// The composite accelerator provides intelligent workload distribution
@@ -1139,7 +1232,7 @@ impl HardwareAccelerationManager {
     pub fn accelerator(&self) -> Arc<dyn HardwareAccelerator> {
         self.composite_accelerator.clone()
     }
-    
+
     /// Returns a reference to a specific accelerator by type.
     ///
     /// # Arguments
@@ -1149,12 +1242,16 @@ impl HardwareAccelerationManager {
     /// # Returns
     ///
     /// Reference to the requested accelerator or None if not available
-    pub fn get_accelerator(&self, accelerator_type: AcceleratorType) -> Option<Arc<dyn HardwareAccelerator>> {
-        self.accelerators.iter()
+    pub fn get_accelerator(
+        &self,
+        accelerator_type: AcceleratorType,
+    ) -> Option<Arc<dyn HardwareAccelerator>> {
+        self.accelerators
+            .iter()
             .find(|acc| acc.accelerator_type() == accelerator_type)
             .cloned()
     }
-    
+
     /// Returns a list of all available accelerators.
     ///
     /// # Returns
@@ -1163,7 +1260,7 @@ impl HardwareAccelerationManager {
     pub fn list_accelerators(&self) -> Vec<Arc<dyn HardwareAccelerator>> {
         self.accelerators.clone()
     }
-    
+
     /// Generates lookup tables for all accelerators.
     ///
     /// # Returns
@@ -1172,20 +1269,24 @@ impl HardwareAccelerationManager {
     pub fn generate_lookup_tables(&self) -> Result<()> {
         for acc in &self.accelerators {
             if let Err(e) = acc.generate_lookup_tables(&self.tables_path) {
-                tracing::warn!("Failed to generate lookup tables for accelerator {:?}: {}", 
-                              acc.accelerator_type(), e);
+                tracing::warn!(
+                    "Failed to generate lookup tables for accelerator {:?}: {}",
+                    acc.accelerator_type(),
+                    e
+                );
             }
         }
         Ok(())
     }
-    
+
     /// Returns statistics for all accelerators.
     ///
     /// # Returns
     ///
     /// Map of accelerator type to statistics
     pub fn get_statistics(&self) -> HashMap<AcceleratorType, HardwareStatistics> {
-        self.accelerators.iter()
+        self.accelerators
+            .iter()
             .map(|acc| (acc.accelerator_type(), acc.get_statistics()))
             .collect()
     }
@@ -1205,6 +1306,8 @@ impl HardwareAccelerationManager {
 /// # Returns
 ///
 /// A hardware acceleration manager or an error
-pub fn initialize_hardware_acceleration(tables_path: impl AsRef<Path>) -> Result<HardwareAccelerationManager> {
+pub fn initialize_hardware_acceleration(
+    tables_path: impl AsRef<Path>,
+) -> Result<HardwareAccelerationManager> {
     HardwareAccelerationManager::new(tables_path)
 }
