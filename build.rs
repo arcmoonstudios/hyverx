@@ -88,7 +88,10 @@ fn main() {
         if is_openmp_supported() {
             // On Windows with Intel oneAPI, use Intel OpenMP library
             if let Ok(oneapi_path) = env::var("ONEAPI_ROOT") {
-                println!("cargo:rustc-link-search={}/compiler/latest/lib", oneapi_path);
+                println!(
+                    "cargo:rustc-link-search={}/compiler/latest/lib",
+                    oneapi_path
+                );
             } else {
                 println!("cargo:rustc-link-search=C:/Program Files (x86)/Intel/oneAPI/compiler/2025.0/lib");
             }
@@ -102,15 +105,28 @@ fn main() {
     }
 }
 
-fn detect_paths(target_os: &str) -> (Option<std::path::PathBuf>, Option<std::path::PathBuf>, Option<std::path::PathBuf>) {
+fn detect_paths(
+    target_os: &str,
+) -> (
+    Option<std::path::PathBuf>,
+    Option<std::path::PathBuf>,
+    Option<std::path::PathBuf>,
+) {
     let cuda_path;
     let sycl_path;
     let opencl_path;
 
     if target_os == "windows" {
-        cuda_path = Some(Path::new("C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.6").to_path_buf());
-        sycl_path = Some(Path::new("C:/Program Files (x86)/Intel/oneAPI/compiler/2025.0/include").to_path_buf());
-        opencl_path = Some(Path::new("C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.6/lib/x64").to_path_buf());
+        cuda_path = Some(
+            Path::new("C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.6").to_path_buf(),
+        );
+        sycl_path = Some(
+            Path::new("C:/Program Files (x86)/Intel/oneAPI/compiler/2025.0/include").to_path_buf(),
+        );
+        opencl_path = Some(
+            Path::new("C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.6/lib/x64")
+                .to_path_buf(),
+        );
     } else if target_os == "linux" {
         // Linux paths
         cuda_path = if Path::new("/usr/local/cuda-12.6").exists() {
@@ -266,11 +282,11 @@ fn is_avx2_supported() -> bool {
                     return true;
                 }
             }
-            
+
             // Alternative detection for Windows
             if let Ok(output) = Command::new("powershell")
                 .args(["-Command", "(Get-WmiObject Win32_Processor).Name"])
-                .output() 
+                .output()
             {
                 let output_str = String::from_utf8_lossy(&output.stdout);
                 if output_str.to_lowercase().contains("avx2") {
@@ -382,7 +398,7 @@ fn is_openmp_supported() -> bool {
             let success = s.success();
             println!("cargo:warning=OpenMP support detected: {}", success);
             success
-        },
+        }
         Err(e) => {
             println!("cargo:warning=OpenMP compilation test failed: {}", e);
             false
